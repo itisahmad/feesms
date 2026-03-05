@@ -57,6 +57,11 @@ class FeeStructureAdmin(admin.ModelAdmin):
 class StudentFeeAdmin(admin.ModelAdmin):
     list_display = ['student', 'fee_structure', 'month', 'year', 'total_amount', 'get_paid_amount']
     list_filter = ['year', 'month']
+    
+    search_fields = [
+        'student__name',
+        'fee_structure__fee_type__name',
+    ]
 
     def get_paid_amount(self, obj):
         total = sum(p.amount for p in obj.payments.all())
