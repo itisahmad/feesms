@@ -4,6 +4,7 @@ School Fee Management Models for Bihar Market
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator
+from decimal import Decimal
 
 
 class User(AbstractUser):
@@ -108,15 +109,8 @@ class Student(models.Model):
 
 class FeeType(models.Model):
     """Types of fees: tuition, transport, books, exam, etc."""
-    FEE_CATEGORY = [
-        ('monthly', 'Monthly/Regular'),
-        ('one_time', 'One-Time/Annual'),
-        ('books', 'Book & Stationery'),
-        ('exam', 'Exam & Other'),
-    ]
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='fee_types', null=True, blank=True)
     name = models.CharField(max_length=100)  # Tuition, Transport, Books, Exam, etc.
-    category = models.CharField(max_length=20, choices=FEE_CATEGORY, default='monthly')
     is_system = models.BooleanField(default=False)  # System-defined vs custom
     description = models.CharField(max_length=255, blank=True)
 
@@ -240,3 +234,126 @@ class Subscription(models.Model):
     current_period_end = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+# Expense Management System Models
+
+class ExpenseCategory(models.Model):
+    """Customizable expense categories for schools"""
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='expense_categories')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    color = models.CharField(max_length=7, default='#6366f1')  # Hex color for UI
+    icon = models.CharField(max_length=50, blank=True)  # Icon name for UI
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['school', 'name']
+        verbose_name_plural = "Expense Categories"
+
+    def __str__(self):
+        return f"{self.school.name} - {self.name}"
+
+
+class Vendor(models.Model):
+    """Vendors/suppliers for school purchases"""
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='vendors')
+    name = models.CharField(max_length=200)
+    contact_person = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.TextField(blank=True)
+    gst_number = models.CharField(max_length=50, blank=True)
+    pan_number = models.CharField(max_length=20, blank=True)
+    payment_terms = models.CharField(max_length=200, blank=True)  # e.g., "Net 30 days"
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Vendor"
+
+    def __str__(self):
+        return f"{self.school.name} - {self.name}"
+
+
+class Expense(models.Model):
+    """Individual expense records"""
+    PAYMENT_MODE_CHOICES = [
+        ('cash', 'Cash'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('cheque', 'Cheque'),
+        ('card', 'Card'),
+        ('upi', 'UPI'),
+        ('other', 'Other'),
+    ]
+    
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='expenses')
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.SET_NULL, null=True, related_name='expenses')
+    vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    date = models.DateField()
+    payment_mode = models.CharField(max_length=20, choices=PAYMENT_MODE_CHOICES, default='cash')
+    reference_number = models.CharField(max_length=100, blank=True)  # Cheque number, transaction ID, etc.
+    receipt = models.ImageField(upload_to='expense_receipts/', blank=True, null=True)
+    tags = models.CharField(max_length=500, blank=True)  # Comma-separated tags for filtering
+    is_recurring = models.BooleanField(default=False)
+    recurring_interval = models.CharField(max_length=20, blank=True)  # monthly, quarterly, yearly
+    recurring_end_date = models.DateField(null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_expenses')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f"{self.school.name} - {self.title} ({self.amount})"
+
+
+class Budget(models.Model):
+    """Budget planning for expense categories"""
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='budgets')
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.CASCADE, related_name='budgets')
+    academic_year = models.CharField(max_length=20)  # e.g., "2025-26"
+    planned_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    alert_threshold_percentage = models.IntegerField(default=80)  # Alert when spent % exceeds this
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['school', 'category', 'academic_year']
+
+    def __str__(self):
+        return f"{self.school.name} - {self.category.name} ({self.academic_year})"
+
+    @property
+    def spent_amount(self):
+        """Calculate actual spending for this budget"""
+        year_parts = self.academic_year.split('-')
+        start_year = year_parts[0]
+        end_year = year_parts[1]
+        # Handle 2-digit end year by converting to 4-digit
+        if len(end_year) == 2:
+            end_year = f"20{end_year}"
+        return Expense.objects.filter(
+            school=self.school,
+            category=self.category,
+            date__gte=f"{start_year}-04-01",  # Academic year start
+            date__lte=f"{end_year}-03-31"   # Academic year end
+        ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+
+    @property
+    def remaining_amount(self):
+        return self.planned_amount - self.spent_amount
+
+    @property
+    def utilization_percentage(self):
+        if self.planned_amount == 0:
+            return 0
+        return float((self.spent_amount / self.planned_amount) * 100)

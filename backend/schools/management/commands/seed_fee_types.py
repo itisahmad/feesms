@@ -6,24 +6,20 @@ from schools.models import FeeType
 
 
 DEFAULT_FEE_TYPES = [
-    # Monthly
-    ('Tuition Fee', 'monthly', 'Monthly tuition'),
-    ('Transport Fee', 'monthly', 'Bus/transport charges'),
-    ('Hostel Fee', 'monthly', 'Hostel charges if applicable'),
-    # One-time
-    ('Admission Fee', 'one_time', 'New student admission'),
-    ('Registration Fee', 'one_time', 'Annual registration'),
-    ('Annual Charges', 'one_time', 'Session/annual charges'),
-    ('Development Fund', 'one_time', 'Building/development fund'),
-    # Books
-    ('Book Fee', 'books', 'Books at session start'),
-    ('Stationery Fee', 'books', 'Stationery/uniform'),
-    ('Notebook Fee', 'books', 'Notebooks'),
-    # Exam
-    ('Exam Fee', 'exam', 'Half-yearly/annual exam'),
-    ('Lab Fee', 'exam', 'Science lab charges'),
-    ('Sports Fee', 'exam', 'Sports/activity fee'),
-    ('Late Fee', 'exam', 'Late payment fine'),
+    ('Tuition Fee', 'Monthly tuition'),
+    ('Transport Fee', 'Bus/transport charges'),
+    ('Hostel Fee', 'Hostel charges if applicable'),
+    ('Admission Fee', 'New student admission'),
+    ('Registration Fee', 'Annual registration'),
+    ('Annual Charges', 'Session/annual charges'),
+    ('Development Fund', 'Building/development fund'),
+    ('Book Fee', 'Books at session start'),
+    ('Stationery Fee', 'Stationery/uniform'),
+    ('Notebook Fee', 'Notebooks'),
+    ('Exam Fee', 'Half-yearly/annual exam'),
+    ('Lab Fee', 'Science lab charges'),
+    ('Sports Fee', 'Sports/activity fee'),
+    ('Late Fee', 'Late payment fine'),
 ]
 
 
@@ -32,11 +28,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         created = 0
-        for name, category, desc in DEFAULT_FEE_TYPES:
+        for name, desc in DEFAULT_FEE_TYPES:
             _, was_created = FeeType.objects.get_or_create(
                 name=name,
                 school=None,
-                defaults={'category': category, 'description': desc, 'is_system': True}
+                defaults={'description': desc, 'is_system': True}
             )
             if was_created:
                 created += 1

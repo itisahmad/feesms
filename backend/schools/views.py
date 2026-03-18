@@ -7,14 +7,23 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Sum, Q
 from django.utils import timezone
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth import get_user_model
 from datetime import datetime
 from decimal import Decimal
+from django.utils.encoding import force_bytes, force_str
 
-from .models import User, School, SchoolClass, Section, Student, FeeType, FeeStructure, StudentFeeStructureChoice, StudentFee, FeePayment
+from .models import (User, School, SchoolClass, Section, Student, FeeType, FeeStructure, 
+                     StudentFeeStructureChoice, StudentFee, FeePayment,
+                     ExpenseCategory, Vendor, Expense, Budget)
+from .messaging import send_sms_message, send_whatsapp_message
 from .serializers import (
     UserSerializer, RegisterSerializer, SchoolSerializer, SchoolClassSerializer, SectionSerializer,
+    StaffUserCreateSerializer, StaffUserUpdateSerializer, ForgotPasswordSerializer, ResetPasswordSerializer,
     StudentSerializer, FeeTypeSerializer, FeeStructureSerializer,
     StudentFeeSerializer, StudentFeeCreateSerializer, FeePaymentSerializer,
+    ExpenseCategorySerializer, VendorSerializer, ExpenseSerializer, BudgetSerializer, ExpenseReportSerializer
 )
 
 
@@ -43,7 +52,107 @@ class CurrentUserView(APIView):
         return Response(serializer.data)
 
 
-class SchoolViewSet(viewsets.ReadOnlyModelViewSet):
+class StaffUserViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        school = self.request.user.school
+        if not school or self.request.user.role != 'owner':
+            return User.objects.none()
+        return User.objects.filter(school=school).exclude(role='owner').order_by('username')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StaffUserCreateSerializer
+        if self.action in ('update', 'partial_update'):
+            return StaffUserUpdateSerializer
+        return UserSerializer
+
+    def perform_create(self, serializer):
+        from rest_framework.exceptions import ValidationError
+
+        owner = self.request.user
+        school = owner.school
+        if owner.role != 'owner' or not school:
+            raise ValidationError('Only school owner can create staff logins.')
+
+        current_staff = User.objects.filter(school=school).exclude(role='owner').count()
+        if current_staff >= school.max_staff_logins:
+            raise ValidationError(f'Max staff logins reached ({school.max_staff_logins}). Upgrade plan to add more.')
+
+        serializer.save(school=school)
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import ValidationError
+
+        owner = self.request.user
+        if owner.role != 'owner':
+            raise ValidationError('Only school owner can update staff logins.')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import ValidationError
+
+        owner = self.request.user
+        if owner.role != 'owner':
+            raise ValidationError('Only school owner can remove staff logins.')
+        if instance.role == 'owner':
+            raise ValidationError('Owner account cannot be removed.')
+        instance.delete()
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        value = serializer.validated_data['username_or_email'].strip()
+        if not value:
+            return Response({'error': 'username_or_email is required'}, status=400)
+
+        user = User.objects.filter(Q(username__iexact=value) | Q(email__iexact=value)).first()
+        if not user:
+            return Response({'message': 'If account exists, reset instructions have been generated.'})
+
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        reset_path = f'/reset-password?uid={uid}&token={token}'
+
+        return Response({
+            'message': 'Reset instructions generated.',
+            'uid': uid,
+            'token': token,
+            'reset_path': reset_path,
+        })
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        uid = serializer.validated_data['uid']
+        token = serializer.validated_data['token']
+        password = serializer.validated_data['password']
+
+        try:
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = get_user_model().objects.get(pk=user_id)
+        except Exception:
+            return Response({'error': 'Invalid reset link.'}, status=400)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({'error': 'Invalid or expired reset token.'}, status=400)
+
+        user.set_password(password)
+        user.save(update_fields=['password'])
+        return Response({'message': 'Password reset successful. Please login again.'})
+
+
+class SchoolViewSet(viewsets.ModelViewSet):
     serializer_class = SchoolSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -219,6 +328,37 @@ class FeeTypeViewSet(viewsets.ModelViewSet):
             return FeeType.objects.none()
         return FeeType.objects.filter(Q(school=school) | Q(school__isnull=True, is_system=True))
 
+    def perform_create(self, serializer):
+        from rest_framework.exceptions import ValidationError
+
+        school = self.request.user.school
+        if not school:
+            raise ValidationError('No school assigned to this user.')
+        serializer.save(school=school, is_system=False)
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import ValidationError
+
+        obj = self.get_object()
+        school = self.request.user.school
+        if obj.is_system and obj.school_id is None:
+            raise ValidationError('System fee types cannot be edited.')
+        if not school or obj.school_id != school.id:
+            raise ValidationError('You can only edit your school fee types.')
+        serializer.save(school=school, is_system=False)
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import ValidationError
+
+        school = self.request.user.school
+        if instance.is_system and instance.school_id is None:
+            raise ValidationError('System fee types cannot be deleted.')
+        if not school or instance.school_id != school.id:
+            raise ValidationError('You can only delete your school fee types.')
+        if FeeStructure.objects.filter(fee_type=instance).exists():
+            raise ValidationError('Cannot delete fee type linked to fee structures.')
+        instance.delete()
+
 
 class FeeStructureViewSet(viewsets.ModelViewSet):
     serializer_class = FeeStructureSerializer
@@ -280,6 +420,35 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             qs = qs.filter(year=int(year))
         return qs
 
+    def _is_struct_billable_for_period(self, struct, month, year, student, choice=None):
+        """Decide whether a fee structure should be billed for a month/year for a student."""
+        start_date = None
+        if choice and choice.effective_from:
+            start_date = choice.effective_from
+        if not start_date:
+            start_date = getattr(student, 'charges_effective_from', None) or student.admission_date
+
+        # Fallback to existing class-level rules when no student-specific start date exists.
+        if not start_date:
+            return struct.should_bill_for_month(month)
+
+        month_diff = (year - start_date.year) * 12 + (month - start_date.month)
+        if month_diff < 0:
+            return False
+
+        if struct.billing_period == 'monthly':
+            return True
+        if struct.billing_period == 'quarterly':
+            return month_diff % 3 == 0
+        if struct.billing_period == 'half_yearly':
+            return month_diff % 6 == 0
+        if struct.billing_period == 'yearly':
+            return month_diff % 12 == 0
+        if struct.billing_period == 'one_time':
+            return month_diff == 0
+
+        return True
+
     def list(self, request, *args, **kwargs):
         self.queryset = self.get_queryset_filtered()
         return super().list(request, *args, **kwargs)
@@ -287,6 +456,9 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def collection_summary(self, request):
         """Fee collection summary: class-wise pending, student-wise breakdown, defaulters"""
+        from datetime import date
+        import calendar
+
         school = request.user.school
         if not school:
             return Response({'error': 'No school'}, status=400)
@@ -307,8 +479,31 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
 
         class_data = {}
         student_data = {}
+        student_ids = list(student_fees.values_list('student_id', flat=True).distinct())
+        choice_ids_map = {}
+        choice_map = {}
+        if student_ids:
+            choices = StudentFeeStructureChoice.objects.filter(student_id__in=student_ids)
+            for c in choices:
+                choice_ids_map.setdefault(c.student_id, []).append(c.fee_structure_id)
+                choice_map[(c.student_id, c.fee_structure_id)] = c
 
         for sf in student_fees:
+            # Only include fee structures that the student has actively chosen
+            if sf.fee_structure_id not in choice_ids_map.get(sf.student_id, []):
+                continue
+            choice = choice_map.get((sf.student_id, sf.fee_structure_id))
+            if not self._is_struct_billable_for_period(sf.fee_structure, sf.month, sf.year, sf.student, choice):
+                continue
+            eff_from = (choice.effective_from if choice and choice.effective_from else None) or getattr(sf.student, 'charges_effective_from', None) or sf.student.admission_date
+            if eff_from:
+                try:
+                    _, last_day = calendar.monthrange(sf.year, sf.month)
+                    if eff_from > date(sf.year, sf.month, last_day):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
             paid = sum(float(p.amount) for p in sf.payments.all())
             total = float(sf.total_amount)
             balance = total - paid
@@ -327,6 +522,8 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
                     'student_id': sid,
                     'student_name': sf.student.name,
                     'class_name': class_name,
+                    'school_class_id': sf.student.school_class_id,
+                    'assigned_fee_structure_ids': choice_ids_map.get(sid, []),
                     'parent_phone': sf.student.parent_phone,
                     'fees': [],
                     'total_due': 0,
@@ -367,13 +564,47 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         student_wise = []
         defaulters = []
         for v in student_data.values():
-            status = 'fully_paid' if v['total_pending'] <= 0 else ('partial' if v['total_paid'] > 0 else 'unpaid')
-            v['status'] = status
+            # Calculate overall status
+            overall_status = 'fully_paid' if v['total_pending'] <= 0 else ('partial' if v['total_paid'] > 0 else 'unpaid')
+            
+            # Calculate detailed status information
+            current_month_fees = [f for f in v['fees'] if f['month'] == month and f['year'] == year]
+            academic_year_fees = []
+            
+            # Check if all academic year fees are paid
+            if v['fees']:
+                # Group by fee structure to check yearly payment status
+                fee_structures = {}
+                for f in v['fees']:
+                    if f['fee_structure_id'] not in fee_structures:
+                        fee_structures[f['fee_structure_id']] = []
+                    fee_structures[f['fee_structure_id']].append(f)
+                
+                academic_year_complete = True
+                for fs_id, fs_fees in fee_structures.items():
+                    if any(f['balance'] > 0 for f in fs_fees):
+                        academic_year_complete = False
+                        break
+                
+                # Current month status
+                current_month_paid = all(f['balance'] <= 0 for f in current_month_fees) if current_month_fees else True
+            else:
+                academic_year_complete = True  # No fees to pay
+                current_month_paid = True
+            
+            v['status'] = overall_status
+            v['detailed_status'] = {
+                'academic_year_complete': academic_year_complete,
+                'current_month_paid': current_month_paid,
+                'current_month': month,
+                'current_year': year,
+                'has_current_month_fees': len(current_month_fees) > 0
+            }
             v['total_due'] = round(v['total_due'], 2)
             v['total_paid'] = round(v['total_paid'], 2)
             v['total_pending'] = round(v['total_pending'], 2)
             student_wise.append(v)
-            if status != 'fully_paid':
+            if overall_status != 'fully_paid':
                 defaulters.append(v)
 
         return Response({
@@ -479,6 +710,13 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         year = request.query_params.get('year')
         if not student_id or not month or not year:
             return Response({'error': 'student_id, month, year required'}, status=400)
+        raw_selected_ids = request.query_params.get('fee_structure_ids')
+        selected_fee_structure_ids = None
+        if raw_selected_ids:
+            try:
+                selected_fee_structure_ids = [int(x) for x in str(raw_selected_ids).split(',') if str(x).strip()]
+            except (ValueError, TypeError):
+                return Response({'error': 'fee_structure_ids must be comma-separated integers'}, status=400)
         month, year = int(month), int(year)
         student = Student.objects.filter(school=school, id=student_id).prefetch_related('fee_structure_choices').first()
         if not student:
@@ -491,6 +729,8 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             month=month,
             year=year,
         ).select_related('fee_structure__fee_type').prefetch_related('payments')
+        if selected_fee_structure_ids is not None:
+            monthly_fees = monthly_fees.filter(fee_structure_id__in=selected_fee_structure_ids)
         monthly_breakdown = []
         monthly_total = 0
         for sf in monthly_fees:
@@ -499,6 +739,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             if balance > 0:
                 monthly_breakdown.append({
                     'fee_type': sf.fee_structure.fee_type.name,
+                    'fee_structure_id': sf.fee_structure_id,
                     'month': sf.month,
                     'year': sf.year,
                     'balance': round(balance, 2),
@@ -536,6 +777,17 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             structs_to_use = [s for s in structures if s.id in choices]
         else:
             structs_to_use = [s for s in structures if not s.fee_type.name.lower().startswith('transport') or getattr(student, 'uses_transport', True)]
+
+        if selected_fee_structure_ids is not None:
+            selected_qs = FeeStructure.objects.filter(
+                school=school,
+                id__in=selected_fee_structure_ids,
+            ).select_related('fee_type')
+            if student.school_class:
+                selected_qs = selected_qs.filter(Q(school_class=student.school_class) | Q(school_class__isnull=True))
+            else:
+                selected_qs = selected_qs.filter(school_class__isnull=True)
+            structs_to_use = list(selected_qs)
 
         # Fallback: if no structures for this academic year, use structures from student's existing fees or class
         if not structs_to_use:
@@ -575,7 +827,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             else:
                 eff_y, eff_m = None, None
             for m, y in months_years:
-                if not struct.should_bill_for_month(m):
+                if not self._is_struct_billable_for_period(struct, m, y, student, choice):
                     continue
                 if eff_y is not None and (y < eff_y or (y == eff_y and m < eff_m)):
                     continue
@@ -607,11 +859,12 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
                     after_discount = balance * (1 - discount_pct)
                     yearly_breakdown.append({
                         'fee_type': struct.fee_type.name,
+                        'fee_structure_id': struct.id,
                         'month': m,
                         'year': y,
                         'balance': round(balance, 2),
                         'after_discount': round(after_discount, 2),
-                        'discount_percent': discount_pct_display,
+                        'discount_percent': round(discount_pct * 100, 2),
                     })
                     yearly_total += after_discount
                     yearly_total_before_discount += balance
@@ -637,6 +890,18 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         payment_date = request.data.get('payment_date')
         payment_mode = request.data.get('payment_mode', 'Cash')
         notes = request.data.get('notes', '') or 'All pending payment'
+        raw_selected_ids = request.data.get('fee_structure_ids')
+        selected_fee_structure_ids = None
+        if raw_selected_ids is not None:
+            try:
+                if isinstance(raw_selected_ids, list):
+                    selected_fee_structure_ids = [int(x) for x in raw_selected_ids]
+                elif str(raw_selected_ids).strip() == '':
+                    selected_fee_structure_ids = []
+                else:
+                    selected_fee_structure_ids = [int(x) for x in str(raw_selected_ids).split(',') if str(x).strip()]
+            except (ValueError, TypeError):
+                return Response({'error': 'fee_structure_ids must be a list of integers'}, status=400)
         if not student_id or month is None or not year or not payment_date:
             return Response({'error': 'student_id, month, year, payment_date required'}, status=400)
         try:
@@ -657,6 +922,8 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             student_id=student_id,
             student__school=school,
         ).filter(fee_filter).select_related('fee_structure__fee_type').prefetch_related('payments')
+        if selected_fee_structure_ids is not None:
+            student_fees = student_fees.filter(fee_structure_id__in=selected_fee_structure_ids)
         to_pay = []
         for sf in student_fees:
             paid = sum(float(p.amount) for p in sf.payments.all())
@@ -736,7 +1003,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         to_pay = []
         with transaction.atomic():
             for m, y in months_years:
-                if not struct.should_bill_for_month(m):
+                if not self._is_struct_billable_for_period(struct, m, y, student):
                     continue
                 eff_from = getattr(student, 'charges_effective_from', None) or student.admission_date
                 if eff_from:
@@ -806,6 +1073,18 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         payment_date = request.data.get('payment_date')
         payment_mode = request.data.get('payment_mode', 'Cash')
         notes = request.data.get('notes', '') or 'Full year payment (all fee types)'
+        raw_selected_ids = request.data.get('fee_structure_ids')
+        selected_fee_structure_ids = None
+        if raw_selected_ids is not None:
+            try:
+                if isinstance(raw_selected_ids, list):
+                    selected_fee_structure_ids = [int(x) for x in raw_selected_ids]
+                elif str(raw_selected_ids).strip() == '':
+                    selected_fee_structure_ids = []
+                else:
+                    selected_fee_structure_ids = [int(x) for x in str(raw_selected_ids).split(',') if str(x).strip()]
+            except (ValueError, TypeError):
+                return Response({'error': 'fee_structure_ids must be a list of integers'}, status=400)
         if not student_id or month is None or not year or not payment_date:
             return Response({'error': 'student_id, month, year, payment_date required'}, status=400)
         try:
@@ -848,6 +1127,17 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         else:
             structs_to_use = [s for s in structures if not s.fee_type.name.lower().startswith('transport') or getattr(student, 'uses_transport', True)]
 
+        if selected_fee_structure_ids is not None:
+            selected_qs = FeeStructure.objects.filter(
+                school=school,
+                id__in=selected_fee_structure_ids,
+            ).select_related('fee_type')
+            if student.school_class:
+                selected_qs = selected_qs.filter(Q(school_class=student.school_class) | Q(school_class__isnull=True))
+            else:
+                selected_qs = selected_qs.filter(school_class__isnull=True)
+            structs_to_use = list(selected_qs)
+
         # Fallback: if no structures for this academic year, use structures from student's existing fees or class
         if not structs_to_use:
             existing_fee_struct_ids = StudentFee.objects.filter(
@@ -884,7 +1174,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
                 else:
                     eff_y, eff_m = None, None
                 for m, y in months_years:
-                    if not struct.should_bill_for_month(m):
+                    if not self._is_struct_billable_for_period(struct, m, y, student, choice):
                         continue
                     if eff_y is not None and (y < eff_y or (y == eff_y and m < eff_m)):
                         continue
@@ -1039,7 +1329,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
                 if choice and choice.effective_from:
                     if year < choice.effective_from.year or (year == choice.effective_from.year and month < choice.effective_from.month):
                         continue
-                if not struct.should_bill_for_month(month):
+                if not self._is_struct_billable_for_period(struct, month, year, student, choice):
                     continue
                 _, was_created = StudentFee.objects.get_or_create(
                     student=student,
@@ -1067,15 +1357,19 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def send_reminder(self, request):
-        """Send WhatsApp reminder for unpaid fees (placeholder - integrate with WhatsApp API)"""
+        """Send payment reminders via WhatsApp/SMS for current month unpaid fees."""
         school = request.user.school
         if not school:
             return Response({'error': 'No school'}, status=400)
 
+        channel = (request.data.get('channel') or 'both').strip().lower()
+        if channel not in ('whatsapp', 'sms', 'both'):
+            return Response({'error': 'Invalid channel. Use whatsapp, sms, or both.'}, status=400)
+
         now = timezone.now()
         month, year = now.month, now.year
 
-        unpaid_fees = []
+        pending_by_student = {}
         student_fees = StudentFee.objects.filter(
             student__school=school,
             month=month,
@@ -1084,17 +1378,260 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
 
         for sf in student_fees:
             paid = sum(p.amount for p in sf.payments.all())
-            if paid < float(sf.total_amount):
-                unpaid_fees.append({
+            balance = float(sf.total_amount) - float(paid)
+            if balance <= 0:
+                continue
+
+            sid = sf.student_id
+            if sid not in pending_by_student:
+                pending_by_student[sid] = {
                     'student': sf.student.name,
                     'parent_phone': sf.student.parent_phone,
-                    'pending': float(sf.total_amount) - paid,
-                })
+                    'pending': 0,
+                }
+            pending_by_student[sid]['pending'] += balance
 
-        # In production: integrate with Twilio/WhatsApp Business API
+        recipients = [
+            s for s in pending_by_student.values()
+            if (s.get('parent_phone') or '').strip()
+        ]
+
+        month_name = now.strftime('%b')
+        sent_sms = 0
+        sent_whatsapp = 0
+        failed = []
+
+        for item in recipients:
+            amount = round(float(item['pending']), 2)
+            message = (
+                f"Dear Parent, {item['student']} has pending school fee of Rs {amount:.2f} "
+                f"for {month_name} {year}. Please pay soon. - {school.name}"
+            )
+
+            if channel in ('sms', 'both'):
+                ok, err, _ = send_sms_message(item['parent_phone'], message)
+                if ok:
+                    sent_sms += 1
+                else:
+                    failed.append({
+                        'student': item['student'],
+                        'parent_phone': item['parent_phone'],
+                        'channel': 'sms',
+                        'error': err,
+                    })
+
+            if channel in ('whatsapp', 'both'):
+                ok, err, _ = send_whatsapp_message(item['parent_phone'], message)
+                if ok:
+                    sent_whatsapp += 1
+                else:
+                    failed.append({
+                        'student': item['student'],
+                        'parent_phone': item['parent_phone'],
+                        'channel': 'whatsapp',
+                        'error': err,
+                    })
+
+        message = (
+            f"Reminders processed for {len(recipients)} parents. "
+            f"SMS sent: {sent_sms}, WhatsApp sent: {sent_whatsapp}, failures: {len(failed)}"
+        )
+
         return Response({
-            'message': f'Reminder would be sent to {len(unpaid_fees)} parents',
-            'unpaid_list': unpaid_fees,
-            'note': 'Integrate with WhatsApp Business API for actual sending',
+            'message': message,
+            'month': month,
+            'year': year,
+            'channel': channel,
+            'parents_with_pending': len(recipients),
+            'sent_sms': sent_sms,
+            'sent_whatsapp': sent_whatsapp,
+            'failures': failed,
         })
+
+
+# Expense Management ViewSets
+
+class ExpenseCategoryViewSet(viewsets.ModelViewSet):
+    serializer_class = ExpenseCategorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        school = self.request.user.school
+        if not school:
+            return ExpenseCategory.objects.none()
+        return ExpenseCategory.objects.filter(school=school).order_by('name')
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.request.user.school)
+
+
+class VendorViewSet(viewsets.ModelViewSet):
+    serializer_class = VendorSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        school = self.request.user.school
+        if not school:
+            return Vendor.objects.none()
+        return Vendor.objects.filter(school=school).order_by('name')
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.request.user.school)
+
+
+class ExpenseViewSet(viewsets.ModelViewSet):
+    serializer_class = ExpenseSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        school = self.request.user.school
+        if not school:
+            return Expense.objects.none()
+        return Expense.objects.filter(school=school).select_related('category', 'vendor', 'created_by').order_by('-date', '-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.request.user.school, created_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def reports(self, request):
+        """Generate comprehensive expense and profit reports"""
+        from django.db.models import Sum, Count, Q
+        from datetime import date
+        import calendar
+
+        school = request.user.school
+        if not school:
+            return Response({'error': 'No school'}, status=400)
+
+        # Get date range from query params
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        if not start_date or not end_date:
+            # Default to current academic year
+            today = date.today()
+            if today.month >= school.academic_year_start_month:
+                start_year = today.year
+            else:
+                start_year = today.year - 1
+            start_date = date(start_year, school.academic_year_start_month, 1)
+            end_year = start_year + 1
+            end_date = date(end_year, school.academic_year_start_month - 1, calendar.monthrange(end_year, school.academic_year_start_month - 1)[1])
+        else:
+            try:
+                start_date = date.fromisoformat(start_date)
+                end_date = date.fromisoformat(end_date)
+            except ValueError:
+                return Response({'error': 'Invalid date format'}, status=400)
+
+        # Calculate total income from fee payments
+        total_income = FeePayment.objects.filter(
+            student_fee__student__school=school,
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date
+        ).aggregate(total=Sum('amount'))['total'] or 0
+
+        # Calculate total expenses
+        total_expenses = Expense.objects.filter(
+            school=school,
+            date__gte=start_date,
+            date__lte=end_date
+        ).aggregate(total=Sum('amount'))['total'] or 0
+
+        # Expense by category
+        expense_by_category = Expense.objects.filter(
+            school=school,
+            date__gte=start_date,
+            date__lte=end_date
+        ).values('category__name').annotate(
+            total=Sum('amount'),
+            count=Count('id')
+        ).order_by('-total')
+
+        # Monthly trends
+        monthly_trends = []
+        current = start_date
+        while current <= end_date:
+            month_income = FeePayment.objects.filter(
+                student_fee__student__school=school,
+                created_at__year=current.year,
+                created_at__month=current.month
+            ).aggregate(total=Sum('amount'))['total'] or 0
+            
+            month_expenses = Expense.objects.filter(
+                school=school,
+                date__year=current.year,
+                date__month=current.month
+            ).aggregate(total=Sum('amount'))['total'] or 0
+            
+            monthly_trends.append({
+                'month': current.strftime('%b %Y'),
+                'income': float(month_income),
+                'expenses': float(month_expenses),
+                'profit': float(month_income - month_expenses)
+            })
+            
+            # Move to next month
+            if current.month == 12:
+                current = date(current.year + 1, 1, 1)
+            else:
+                current = date(current.year, current.month + 1, 1)
+
+        # Top vendors
+        top_vendors = Expense.objects.filter(
+            school=school,
+            date__gte=start_date,
+            date__lte=end_date,
+            vendor__isnull=False
+        ).values('vendor__name').annotate(
+            total=Sum('amount'),
+            count=Count('id')
+        ).order_by('-total')[:10]
+
+        # Budget comparison
+        budget_comparison = []
+        budgets = Budget.objects.filter(
+            school=school,
+            academic_year=f"{start_date.year}-{(start_date.year + 1) % 100:02d}"
+        ).select_related('category')
+        
+        for budget in budgets:
+            budget_comparison.append({
+                'category': budget.category.name,
+                'budgeted': float(budget.planned_amount),
+                'spent': float(budget.spent_amount),
+                'remaining': float(budget.remaining_amount),
+                'utilization': budget.utilization_percentage
+            })
+
+        data = {
+            'total_income': float(total_income),
+            'total_expenses': float(total_expenses),
+            'net_profit': float(total_income - total_expenses),
+            'expense_by_category': list(expense_by_category),
+            'monthly_trends': monthly_trends,
+            'top_vendors': list(top_vendors),
+            'budget_comparison': budget_comparison,
+            'period': {
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat()
+            }
+        }
+
+        serializer = ExpenseReportSerializer(data)
+        return Response(serializer.data)
+
+
+class BudgetViewSet(viewsets.ModelViewSet):
+    serializer_class = BudgetSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        school = self.request.user.school
+        if not school:
+            return Budget.objects.none()
+        return Budget.objects.filter(school=school).select_related('category', 'school').order_by('-academic_year', 'category__name')
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.request.user.school)
 

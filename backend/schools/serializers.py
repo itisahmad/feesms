@@ -3,7 +3,9 @@ REST API Serializers
 """
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from .models import User, School, SchoolClass, Section, Student, FeeType, FeeStructure, StudentFeeStructureChoice, StudentFee, FeePayment
+from .models import (User, School, SchoolClass, Section, Student, FeeType, FeeStructure, 
+                     StudentFeeStructureChoice, StudentFee, FeePayment, 
+                     ExpenseCategory, Vendor, Expense, Budget)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -11,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'school', 'school_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'is_active', 'school', 'school_name']
         read_only_fields = ['school']
 
 
@@ -72,6 +74,54 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 
+class StaffUserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password2 = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone', 'role', 'password', 'password2']
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({'password': "Passwords don't match."})
+        if attrs.get('role') == 'owner':
+            raise serializers.ValidationError({'role': 'Owner role cannot be assigned to staff login.'})
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('password2')
+        password = validated_data.pop('password')
+        return User.objects.create_user(password=password, **validated_data)
+
+
+class StaffUserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['email', 'first_name', 'last_name', 'phone', 'role', 'is_active']
+
+    def validate_role(self, value):
+        if value == 'owner':
+            raise serializers.ValidationError('Owner role cannot be assigned to staff login.')
+        return value
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    username_or_email = serializers.CharField()
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password2 = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({'password': "Passwords don't match."})
+        return attrs
+
+
 class SchoolSerializer(serializers.ModelSerializer):
     class Meta:
         model = School
@@ -110,9 +160,82 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = ['id', 'name', 'school_class', 'section', 'class_name', 'section_name', 'admission_date', 'charges_effective_from', 'uses_transport', 'parent_name', 'parent_phone', 'parent_email',
                   'admission_number', 'roll_number', 'is_active', 'fee_structure_choices', 'created_at']
+        read_only_fields = ['admission_number']
+
+    def _get_school(self, attrs):
+        school = attrs.get('school') or getattr(self.instance, 'school', None)
+        if school:
+            return school
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_authenticated', False):
+            return getattr(request.user, 'school', None)
+        return None
+
+    def _generate_admission_number(self, school):
+        next_num = Student.objects.filter(school=school).exclude(admission_number='').count() + 1
+        while True:
+            candidate = f"ADM-{next_num:05d}"
+            if not Student.objects.filter(school=school, admission_number=candidate).exists():
+                return candidate
+            next_num += 1
+
+    def _generate_roll_number(self, school, school_class, section):
+        qs = Student.objects.filter(
+            school=school,
+            school_class=school_class,
+            section=section,
+        ).exclude(roll_number='')
+
+        max_roll = 0
+        for rn in qs.values_list('roll_number', flat=True):
+            if str(rn).isdigit():
+                max_roll = max(max_roll, int(rn))
+
+        candidate = max_roll + 1
+        while qs.filter(roll_number=str(candidate)).exists():
+            candidate += 1
+        return str(candidate)
+
+    def validate(self, attrs):
+        if 'roll_number' in attrs:
+            attrs['roll_number'] = (attrs.get('roll_number') or '').strip()
+
+        school = self._get_school(attrs)
+        school_class = attrs.get('school_class') or getattr(self.instance, 'school_class', None)
+        section = attrs.get('section') or getattr(self.instance, 'section', None)
+        roll_number = attrs.get('roll_number', getattr(self.instance, 'roll_number', ''))
+
+        if roll_number and school and school_class and section:
+            qs = Student.objects.filter(
+                school=school,
+                school_class=school_class,
+                section=section,
+                roll_number=roll_number,
+            )
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({'roll_number': 'Roll number must be unique in the selected class and section.'})
+
+        return attrs
 
     def create(self, validated_data):
         choices = validated_data.pop('fee_structure_choices', [])
+        validated_data.pop('admission_number', None)
+
+        school = validated_data.get('school') or self._get_school(validated_data)
+        if school:
+            validated_data['admission_number'] = self._generate_admission_number(school)
+
+        roll_number = (validated_data.get('roll_number') or '').strip()
+        validated_data['roll_number'] = roll_number
+        if not roll_number and school and validated_data.get('school_class') and validated_data.get('section'):
+            validated_data['roll_number'] = self._generate_roll_number(
+                school,
+                validated_data['school_class'],
+                validated_data['section'],
+            )
+
         student = Student.objects.create(**validated_data)
         for c in choices:
             fs_id = c.get('fee_structure_id')
@@ -134,8 +257,13 @@ class StudentSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         choices = validated_data.pop('fee_structure_choices', None)
+        validated_data.pop('admission_number', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+
+        if not (instance.roll_number or '').strip() and instance.school and instance.school_class and instance.section:
+            instance.roll_number = self._generate_roll_number(instance.school, instance.school_class, instance.section)
+
         instance.save()
         if choices is not None:
             from datetime import datetime
@@ -177,7 +305,7 @@ class StudentListSerializer(serializers.ModelSerializer):
 class FeeTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = FeeType
-        fields = ['id', 'name', 'category', 'is_system', 'description']
+        fields = ['id', 'name', 'is_system', 'description']
 
 
 class FeeStructureSerializer(serializers.ModelSerializer):
@@ -232,3 +360,86 @@ class StudentFeeCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentFee
         fields = ['student', 'fee_structure', 'month', 'year', 'amount', 'late_fine', 'total_amount', 'due_date']
+
+
+# Expense Management Serializers
+
+class ExpenseCategorySerializer(serializers.ModelSerializer):
+    expense_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExpenseCategory
+        fields = ['id', 'name', 'description', 'color', 'icon', 'is_active', 'expense_count', 'created_at', 'updated_at']
+
+    def get_expense_count(self, obj):
+        return obj.expenses.count()
+
+
+class VendorSerializer(serializers.ModelSerializer):
+    expense_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Vendor
+        fields = ['id', 'name', 'contact_person', 'phone', 'email', 'address', 
+                 'gst_number', 'pan_number', 'payment_terms', 'is_active', 
+                 'expense_count', 'created_at', 'updated_at']
+
+    def get_expense_count(self, obj):
+        return obj.expenses.count()
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    vendor_name = serializers.CharField(source='vendor.name', read_only=True)
+    payment_mode_display = serializers.CharField(source='get_payment_mode_display', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    receipt_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Expense
+        fields = ['id', 'title', 'description', 'amount', 'date', 'payment_mode', 
+                 'payment_mode_display', 'reference_number', 'receipt', 'receipt_url',
+                 'tags', 'is_recurring', 'recurring_interval', 'recurring_end_date',
+                 'category', 'category_name', 'vendor', 'vendor_name', 
+                 'created_by', 'created_by_name', 'created_at', 'updated_at']
+
+    def get_receipt_url(self, obj):
+        if obj.receipt:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.receipt.url)
+        return None
+
+
+class BudgetSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    spent_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    remaining_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    utilization_percentage = serializers.FloatField(read_only=True)
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Budget
+        fields = ['id', 'academic_year', 'planned_amount', 'spent_amount', 
+                 'remaining_amount', 'utilization_percentage', 'status',
+                 'alert_threshold_percentage', 'notes', 'category', 'category_name',
+                 'created_at', 'updated_at']
+
+    def get_status(self, obj):
+        if obj.utilization_percentage >= 100:
+            return 'exceeded'
+        elif obj.utilization_percentage >= obj.alert_threshold_percentage:
+            return 'warning'
+        else:
+            return 'on_track'
+
+
+class ExpenseReportSerializer(serializers.Serializer):
+    """Custom serializer for expense reports and analytics"""
+    total_expenses = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_income = serializers.DecimalField(max_digits=12, decimal_places=2)
+    net_profit = serializers.DecimalField(max_digits=12, decimal_places=2)
+    expense_by_category = serializers.ListField()
+    monthly_trends = serializers.ListField()
+    top_vendors = serializers.ListField()
+    budget_comparison = serializers.ListField()

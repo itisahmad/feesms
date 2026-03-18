@@ -43,8 +43,8 @@ class StudentAdmin(admin.ModelAdmin):
 
 @admin.register(FeeType)
 class FeeTypeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'is_system', 'school']
-    list_filter = ['category', 'is_system']
+    list_display = ['name', 'is_system', 'school']
+    list_filter = ['is_system']
 
 
 @admin.register(FeeStructure)
