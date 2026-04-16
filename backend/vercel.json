@@ -33,18 +33,6 @@
       "dest": "/api/index.py"
     }
   ],
-  "env": {
-    "DJANGO_SETTINGS_MODULE": "config.settings_production",
-    "SECRET_KEY": "@secret_key",
-    "DB_NAME": "@db_name",
-    "DB_USER": "@db_user",
-    "DB_PASSWORD": "@db_password",
-    "DB_HOST": "@db_host",
-    "DB_PORT": "@db_port",
-    "EMAIL_HOST": "@email_host",
-    "EMAIL_HOST_USER": "@email_user",
-    "EMAIL_HOST_PASSWORD": "@email_password"
-  },
   "functions": {
     "api/index.py": {
       "maxDuration": 30
