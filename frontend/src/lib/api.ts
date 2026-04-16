@@ -109,7 +109,7 @@ export const getStudentFeeHistory = (studentId: number) => api.get(`/students/${
 
 // Fee types
 export const getFeeTypes = () => api.get('/fee-types/');
-export const createFeeType = (data: { name: string; description?: string }) =>
+export const createFeeType = (data: { name: string; description?: string; billing_period?: string }) =>
   api.post('/fee-types/', data);
 export const updateFeeType = (id: number, data: { name?: string; description?: string }) =>
   api.patch(`/fee-types/${id}/`, data);

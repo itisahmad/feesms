@@ -109,17 +109,6 @@ class Student(models.Model):
 
 class FeeType(models.Model):
     """Types of fees: tuition, transport, books, exam, etc."""
-    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='fee_types', null=True, blank=True)
-    name = models.CharField(max_length=100)  # Tuition, Transport, Books, Exam, etc.
-    is_system = models.BooleanField(default=False)  # System-defined vs custom
-    description = models.CharField(max_length=255, blank=True)
-
-    def __str__(self):
-        return self.name
-
-
-class FeeStructure(models.Model):
-    """Fee amount per class - different classes can have different fees"""
     BILLING_PERIOD_CHOICES = [
         ('monthly', 'Monthly'),
         ('quarterly', 'Quarterly'),
@@ -127,12 +116,23 @@ class FeeStructure(models.Model):
         ('yearly', 'Yearly'),
         ('one_time', 'One-Time Payment'),
     ]
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='fee_types', null=True, blank=True)
+    name = models.CharField(max_length=100)  # Tuition, Transport, Books, Exam, etc.
+    is_system = models.BooleanField(default=False)  # System-defined vs custom
+    description = models.CharField(max_length=255, blank=True)
+    billing_period = models.CharField(max_length=20, choices=BILLING_PERIOD_CHOICES, default='monthly')
+
+    def __str__(self):
+        return f"{self.name} ({self.get_billing_period_display()})"
+
+
+class FeeStructure(models.Model):
+    """Fee amount per class - different classes can have different fees"""
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='fee_structures')
     fee_type = models.ForeignKey(FeeType, on_delete=models.CASCADE, related_name='structures')
     school_class = models.ForeignKey(SchoolClass, on_delete=models.PROTECT, related_name='fee_structures', null=True, blank=True)
     class_name = models.CharField(max_length=50, blank=True)  # Deprecated - use school_class; kept for migration
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    billing_period = models.CharField(max_length=20, choices=BILLING_PERIOD_CHOICES, default='monthly')
     due_day = models.IntegerField(default=5)  # Day of month when fee is due (1-28)
     late_fine_per_day = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     academic_year = models.CharField(max_length=20, default='2024-25')
@@ -142,15 +142,16 @@ class FeeStructure(models.Model):
 
     def should_bill_for_month(self, month: int) -> bool:
         """Whether this fee should be billed for the given month (1-12)."""
-        if self.billing_period == 'monthly':
+        billing_period = self.fee_type.billing_period
+        if billing_period == 'monthly':
             return True
-        if self.billing_period == 'quarterly':
+        if billing_period == 'quarterly':
             return month in (1, 4, 7, 10)
-        if self.billing_period == 'half_yearly':
+        if billing_period == 'half_yearly':
             return month in (1, 7)
-        if self.billing_period == 'yearly':
+        if billing_period == 'yearly':
             return month == 1
-        if self.billing_period == 'one_time':
+        if billing_period == 'one_time':
             start = getattr(self.school, 'academic_year_start_month', 4) or 4
             return month == start  # First month of academic year
         return True

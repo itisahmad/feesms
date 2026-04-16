@@ -43,14 +43,14 @@ class StudentAdmin(admin.ModelAdmin):
 
 @admin.register(FeeType)
 class FeeTypeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'is_system', 'school']
-    list_filter = ['is_system']
+    list_display = ['name', 'billing_period', 'is_system', 'school']
+    list_filter = ['is_system', 'billing_period']
 
 
 @admin.register(FeeStructure)
 class FeeStructureAdmin(admin.ModelAdmin):
-    list_display = ['school', 'fee_type', 'school_class', 'amount', 'billing_period', 'academic_year']
-    list_filter = ['school', 'billing_period', 'academic_year']
+    list_display = ['school', 'fee_type', 'school_class', 'amount', 'academic_year']
+    list_filter = ['school', 'academic_year']
 
 
 @admin.register(StudentFee)

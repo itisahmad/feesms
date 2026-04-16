@@ -6,7 +6,8 @@ import { getFeeTypes, createFeeType, getFeeStructures, createFeeStructure, updat
 interface FeeType {
   id: number;
   name: string;
-  category: string;
+  billing_period: string;
+  description?: string;
 }
 
 interface SchoolClass {
@@ -21,14 +22,15 @@ interface FeeStructure {
   school_class: number | null;
   class_name: string;
   amount: string;
-  billing_period: string;
   billing_period_display?: string;
+  fee_type_billing_period?: string;
   due_day: number;
   late_fine_per_day: string;
   academic_year: string;
   allow_yearly_payment?: boolean;
   yearly_discount_percent?: number;
   is_locked?: boolean;
+  created_at?: string;
 }
 
 const MONTH_ABBREV = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -113,7 +115,7 @@ export default function FeeStructurePage() {
   const [addingFeeType, setAddingFeeType] = useState(false);
   const [newFeeType, setNewFeeType] = useState({
     name: '',
-    category: 'monthly',
+    billing_period: 'monthly',
     description: '',
   });
 
@@ -149,14 +151,12 @@ export default function FeeStructurePage() {
     try {
       const { data } = await createFeeType({
         name,
-        category: newFeeType.category,
         description: newFeeType.description.trim(),
+        billing_period: newFeeType.billing_period,
       });
       await loadFeeTypes();
-      // Auto-populate billing period based on category
-      const billingPeriod = getBillingPeriodFromCategory(newFeeType.category);
-      setForm((f) => ({ ...f, fee_type: String(data.id), billing_period: billingPeriod }));
-      setNewFeeType({ name: '', category: 'monthly', description: '' });
+      setForm((f) => ({ ...f, fee_type: String(data.id) }));
+      setNewFeeType({ name: '', billing_period: 'monthly', description: '' });
     } catch {
       alert('Failed to add fee type');
     } finally {
@@ -167,11 +167,10 @@ export default function FeeStructurePage() {
   const handleFeeTypeChange = (feeTypeId: string) => {
     setForm((f) => ({ ...f, fee_type: feeTypeId }));
     
-    // Auto-populate billing period based on selected fee type's category
+    // Set billing period from selected fee type
     const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(feeTypeId));
     if (selectedFeeType) {
-      const billingPeriod = getBillingPeriodFromCategory(selectedFeeType.category);
-      setForm((f) => ({ ...f, billing_period: billingPeriod }));
+      setForm((f) => ({ ...f, billing_period: selectedFeeType.billing_period }));
     }
   };
 
@@ -180,11 +179,10 @@ export default function FeeStructurePage() {
     
     setEditForm((f) => f ? { ...f, fee_type: feeTypeId } : null);
     
-    // Auto-populate billing period based on selected fee type's category
+    // Set billing period from selected fee type
     const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(feeTypeId));
     if (selectedFeeType) {
-      const billingPeriod = getBillingPeriodFromCategory(selectedFeeType.category);
-      setEditForm((f) => f ? { ...f, billing_period: billingPeriod } : null);
+      setEditForm((f) => f ? { ...f, billing_period: selectedFeeType.billing_period } : null);
     }
   };
 
@@ -200,7 +198,6 @@ export default function FeeStructurePage() {
         fee_type: parseInt(form.fee_type),
         school_class: parseInt(form.school_class),
         amount: parseFloat(form.amount),
-        billing_period: form.billing_period,
         due_day: parseInt(form.due_day),
         late_fine_per_day: parseFloat(form.late_fine_per_day) || 0,
         academic_year: form.academic_year,
@@ -241,7 +238,6 @@ export default function FeeStructurePage() {
         fee_type: parseInt(editForm.fee_type),
         school_class: parseInt(editForm.school_class),
         amount: parseFloat(editForm.amount),
-        billing_period: editForm.billing_period,
         due_day: parseInt(editForm.due_day),
         late_fine_per_day: parseFloat(editForm.late_fine_per_day) || 0,
         academic_year: editForm.academic_year,
@@ -307,12 +303,12 @@ export default function FeeStructurePage() {
                   className="w-full px-3 py-2 text-sm rounded border border-gray-200"
                 />
                 <select
-                  value={newFeeType.category}
-                  onChange={(e) => setNewFeeType((f) => ({ ...f, category: e.target.value }))}
+                  value={newFeeType.billing_period}
+                  onChange={(e) => setNewFeeType((f) => ({ ...f, billing_period: e.target.value }))}
                   className="w-full px-3 py-2 text-sm rounded border border-gray-200"
                 >
-                  {FEE_TYPE_CATEGORIES.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
+                  {BILLING_PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
                   ))}
                 </select>
                 <button
@@ -350,24 +346,6 @@ export default function FeeStructurePage() {
                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
                 required
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Billing period 
-                <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">Auto-populated</span>
-              </label>
-              <select
-                value={form.billing_period}
-                disabled
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed"
-              >
-                {BILLING_PERIODS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Billing period is automatically set based on fee type category.
-              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Due day (1-28)</label>
@@ -481,25 +459,7 @@ export default function FeeStructurePage() {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Billing period 
-                  <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">Auto-populated</span>
-                </label>
-                <select
-                  value={editForm.billing_period}
-                  disabled
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed"
-                >
-                  {BILLING_PERIODS.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Billing period is automatically set based on fee type category.
-                </p>
-              </div>
-              <div>
+                            <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Due day (1-28)</label>
                 <input
                   type="number"
@@ -602,7 +562,7 @@ export default function FeeStructurePage() {
                   <td className="py-4 px-6">{s.fee_type_name}</td>
                   <td className="py-4 px-6">{s.class_name}</td>
                   <td className="py-4 px-6">₹{parseFloat(s.amount).toLocaleString('en-IN')}</td>
-                  <td className="py-4 px-6">{s.billing_period_display || BILLING_PERIODS.find((p) => p.value === s.billing_period)?.label || s.billing_period}</td>
+                  <td className="py-4 px-6">{s.billing_period_display || BILLING_PERIODS.find((p) => p.value === s.fee_type_billing_period)?.label || s.fee_type_billing_period}</td>
                   <td className="py-4 px-6">{s.due_day}</td>
                   <td className="py-4 px-6">₹{parseFloat(s.late_fine_per_day || '0').toLocaleString('en-IN')}</td>
                   <td className="py-4 px-6">{formatAcademicYear(s.academic_year, startMonth)}</td>

@@ -303,21 +303,24 @@ class StudentListSerializer(serializers.ModelSerializer):
 
 
 class FeeTypeSerializer(serializers.ModelSerializer):
+    billing_period_display = serializers.CharField(source='get_billing_period_display', read_only=True)
+    
     class Meta:
         model = FeeType
-        fields = ['id', 'name', 'is_system', 'description']
+        fields = ['id', 'name', 'billing_period', 'billing_period_display', 'is_system', 'description']
 
 
 class FeeStructureSerializer(serializers.ModelSerializer):
     fee_type_name = serializers.CharField(source='fee_type.name', read_only=True)
     class_name = serializers.CharField(source='get_class_display', read_only=True)
-    billing_period_display = serializers.CharField(source='get_billing_period_display', read_only=True)
+    billing_period_display = serializers.CharField(source='fee_type.get_billing_period_display', read_only=True)
+    fee_type_billing_period = serializers.CharField(source='fee_type.billing_period', read_only=True)
     is_locked = serializers.SerializerMethodField()
 
     class Meta:
         model = FeeStructure
-        fields = ['id', 'fee_type', 'fee_type_name', 'school_class', 'class_name', 'amount', 'billing_period',
-                  'billing_period_display', 'due_day', 'late_fine_per_day', 'academic_year', 'allow_yearly_payment',
+        fields = ['id', 'fee_type', 'fee_type_name', 'school_class', 'class_name', 'amount', 
+                  'billing_period_display', 'fee_type_billing_period', 'due_day', 'late_fine_per_day', 'academic_year', 'allow_yearly_payment',
                   'yearly_discount_percent', 'is_locked', 'created_at']
 
     def get_is_locked(self, obj):
