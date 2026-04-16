@@ -6,6 +6,9 @@ import { useSearchParams } from 'next/navigation';
 import { resetPassword } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+export const runtime = 'edge';
 
 export default function ResetPasswordPage() {
   const params = useSearchParams();
