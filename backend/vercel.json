@@ -2,22 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/simple_handler.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "api/emergency_handler.py",
+      "src": "api/index.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/simple_handler.py"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/api/emergency_handler.py"
+      "dest": "/api/index.py"
     }
   ]
 }
