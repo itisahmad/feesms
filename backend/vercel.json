@@ -1,35 +1,14 @@
 {
   "version": 2,
-  "name": "smsapp-backend",
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "api/migrate.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "api/createsuperuser.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
-      "src": "/api/migrate",
-      "dest": "/api/migrate.py"
-    },
-    {
-      "src": "/api/createsuperuser",
-      "dest": "/api/createsuperuser.py"
-    },
-    {
       "src": "/api/(.*)",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/(.*)",
       "dest": "/api/index.py"
     }
   ]
