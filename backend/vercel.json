@@ -32,16 +32,5 @@
       "src": "/(.*)",
       "dest": "/api/index.py"
     }
-  ],
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 30
-    },
-    "api/migrate.py": {
-      "maxDuration": 60
-    },
-    "api/createsuperuser.py": {
-      "maxDuration": 30
-    }
-  }
+  ]
 }
