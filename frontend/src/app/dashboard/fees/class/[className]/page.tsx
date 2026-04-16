@@ -536,8 +536,8 @@ export default function ClassFeesPage() {
                 />
                 <span className="text-sm font-medium text-teal-800">Monthly</span>
               </label>
-              {/* Show yearly option if current month is paid but academic year is not complete */}
-              {payAllStudent.detailed_status?.current_month_paid && !payAllStudent.detailed_status?.academic_year_complete && (
+              {/* Always show yearly option if student exists and current month is paid but academic year is not complete */}
+              {payAllStudent && payAllStudent.detailed_status?.current_month_paid && !payAllStudent.detailed_status?.academic_year_complete && (
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
@@ -548,6 +548,33 @@ export default function ClassFeesPage() {
                   />
                   <span className="text-sm font-medium text-teal-800">Yearly</span>
                   <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">Complete Year</span>
+                </label>
+              )}
+              {/* Show yearly option for any student who has paid current month */}
+              {payAllStudent && payAllStudent.detailed_status?.current_month_paid && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="payMode"
+                    checked={payMode === 'yearly'}
+                    onChange={() => setPayMode('yearly')}
+                    className="rounded-full border-gray-300"
+                  />
+                  <span className="text-sm font-medium text-teal-800">Yearly</span>
+                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">Current Month Paid</span>
+                </label>
+              )}
+              {/* Show yearly option for any student regardless of academic year completion */}
+              {payAllStudent && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="payMode"
+                    checked={payMode === 'yearly'}
+                    onChange={() => setPayMode('yearly')}
+                    className="rounded-full border-gray-300"
+                  />
+                  <span className="text-sm font-medium text-teal-800">Yearly</span>
                 </label>
               )}
               <label className="flex items-center gap-2 cursor-pointer">
