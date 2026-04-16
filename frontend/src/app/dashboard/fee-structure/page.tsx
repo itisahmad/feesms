@@ -220,7 +220,7 @@ export default function FeeStructurePage() {
       fee_type: String(s.fee_type),
       school_class: s.school_class ? String(s.school_class) : '',
       amount: s.amount,
-      billing_period: s.billing_period,
+      billing_period: s.fee_type_billing_period || 'monthly',
       due_day: String(s.due_day),
       late_fine_per_day: s.late_fine_per_day || '0',
       academic_year: s.academic_year,
@@ -348,6 +348,32 @@ export default function FeeStructurePage() {
               />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Billing Period
+                <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">From Fee Type</span>
+              </label>
+              <div className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600">
+                {form.fee_type ? (
+                  <div className="flex items-center justify-between">
+                    <span>
+                      {(() => {
+                        const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(form.fee_type));
+                        const billingPeriod = selectedFeeType?.billing_period;
+                        const periodLabel = BILLING_PERIODS.find(p => p.value === billingPeriod)?.label || billingPeriod;
+                        return periodLabel || 'Select fee type';
+                      })()}
+                    </span>
+                    <span className="text-xs text-teal-600">Linked to fee type</span>
+                  </div>
+                ) : (
+                  'Select fee type to see billing period'
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Billing period is automatically set based on the selected fee type and cannot be changed here.
+              </p>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Due day (1-28)</label>
               <input
                 type="number"
@@ -458,6 +484,32 @@ export default function FeeStructurePage() {
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Billing Period
+                  <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">From Fee Type</span>
+                </label>
+                <div className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600">
+                  {editForm?.fee_type ? (
+                    <div className="flex items-center justify-between">
+                      <span>
+                        {(() => {
+                          const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(editForm.fee_type));
+                          const billingPeriod = selectedFeeType?.billing_period;
+                          const periodLabel = BILLING_PERIODS.find(p => p.value === billingPeriod)?.label || billingPeriod;
+                          return periodLabel || 'Select fee type';
+                        })()}
+                      </span>
+                      <span className="text-xs text-teal-600">Linked to fee type</span>
+                    </div>
+                  ) : (
+                    'Select fee type to see billing period'
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Billing period is automatically set based on the selected fee type and cannot be changed here.
+                </p>
               </div>
                             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Due day (1-28)</label>

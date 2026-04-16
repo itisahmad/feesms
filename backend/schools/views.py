@@ -436,15 +436,18 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         if month_diff < 0:
             return False
 
-        if struct.billing_period == 'monthly':
+        # Use billing period from the fee type instead of the structure
+        billing_period = struct.fee_type.billing_period
+        
+        if billing_period == 'monthly':
             return True
-        if struct.billing_period == 'quarterly':
+        if billing_period == 'quarterly':
             return month_diff % 3 == 0
-        if struct.billing_period == 'half_yearly':
+        if billing_period == 'half_yearly':
             return month_diff % 6 == 0
-        if struct.billing_period == 'yearly':
+        if billing_period == 'yearly':
             return month_diff % 12 == 0
-        if struct.billing_period == 'one_time':
+        if billing_period == 'one_time':
             return month_diff == 0
 
         return True
@@ -543,7 +546,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
                 'allow_yearly_payment': sf.fee_structure.allow_yearly_payment,
                 'yearly_discount_percent': float(sf.fee_structure.yearly_discount_percent or 0),
                 'academic_year': sf.fee_structure.academic_year,
-                'billing_period': sf.fee_structure.billing_period,
+                'billing_period': sf.fee_structure.fee_type.billing_period,
                 'amount_per_period': float(sf.fee_structure.amount),
             })
             student_data[sid]['total_due'] += total
