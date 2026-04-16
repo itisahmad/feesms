@@ -598,7 +598,8 @@ export default function ClassFeesPage() {
                 </div>
               </div>
             )}
-            {payMode !== 'all_pending' && (
+            {/* Fee type selection - always show when student is selected */}
+            {payAllStudent && (
               <div className="mb-4 p-3 rounded-lg border border-gray-200 bg-gray-50">
                 <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Fee types for this payment</div>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
