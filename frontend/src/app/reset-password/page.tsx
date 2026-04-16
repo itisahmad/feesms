@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { resetPassword } from '@/lib/api';
 
+export const dynamic = 'force-dynamic';
+
 export default function ResetPasswordPage() {
   const params = useSearchParams();
   const uid = useMemo(() => params.get('uid') || '', [params]);
