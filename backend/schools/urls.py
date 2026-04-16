@@ -7,6 +7,8 @@ from .views import (
     SchoolViewSet, SchoolClassViewSet, StudentViewSet, FeeTypeViewSet, FeeStructureViewSet, StudentFeeViewSet,
     StaffUserViewSet, ExpenseCategoryViewSet, VendorViewSet, ExpenseViewSet, BudgetViewSet,
 )
+from .views_maintenance import maintenance_check
+from .views_booking import booking_slots, book_slot
 
 router = DefaultRouter()
 router.register(r'schools', SchoolViewSet, basename='school')
@@ -28,5 +30,8 @@ urlpatterns = [
     path('auth/reset-password/', ResetPasswordView.as_view()),
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('maintenance/', maintenance_check, name='maintenance_check'),
+    path('booking/slots/', booking_slots, name='booking_slots'),
+    path('booking/book/', book_slot, name='book_slot'),
     path('', include(router.urls)),
 ]

@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "name": "smsapp-backend",
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "api/migrate.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "api/createsuperuser.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/migrate",
+      "dest": "/api/migrate.py"
+    },
+    {
+      "src": "/api/createsuperuser",
+      "dest": "/api/createsuperuser.py"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.py"
+    }
+  ],
+  "env": {
+    "DJANGO_SETTINGS_MODULE": "config.settings_production",
+    "SECRET_KEY": "@secret_key",
+    "DB_NAME": "@db_name",
+    "DB_USER": "@db_user",
+    "DB_PASSWORD": "@db_password",
+    "DB_HOST": "@db_host",
+    "DB_PORT": "@db_port",
+    "EMAIL_HOST": "@email_host",
+    "EMAIL_HOST_USER": "@email_user",
+    "EMAIL_HOST_PASSWORD": "@email_password"
+  },
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30
+    },
+    "api/migrate.py": {
+      "maxDuration": 60
+    },
+    "api/createsuperuser.py": {
+      "maxDuration": 30
+    }
+  }
+}

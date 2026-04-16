@@ -202,3 +202,8 @@ export const getBudgets = () => api.get('/budgets/');
 export const createBudget = (data: any) => api.post('/budgets/', data);
 export const updateBudget = (id: number, data: any) => api.patch(`/budgets/${id}/`, data);
 export const deleteBudget = (id: number) => api.delete(`/budgets/${id}/`);
+
+// Booking APIs
+export const checkMaintenance = () => api.get('/maintenance/');
+export const getBookingSlots = () => api.get('/booking/slots/');
+export const bookSlot = (data: { date: string; time: string }) => api.post('/booking/book/', data);

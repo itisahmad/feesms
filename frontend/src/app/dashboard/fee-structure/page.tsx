@@ -72,6 +72,22 @@ const FEE_TYPE_CATEGORIES = [
   { value: 'exam', label: 'Exam & Other' },
 ] as const;
 
+// Map fee type categories to default billing periods
+const getBillingPeriodFromCategory = (category: string): string => {
+  switch (category) {
+    case 'monthly':
+      return 'monthly';
+    case 'one_time':
+      return 'one_time';
+    case 'books':
+      return 'monthly'; // Books are typically monthly or one-time, defaulting to monthly
+    case 'exam':
+      return 'quarterly'; // Exam fees are typically quarterly
+    default:
+      return 'monthly';
+  }
+};
+
 export default function FeeStructurePage() {
   const [feeTypes, setFeeTypes] = useState<FeeType[]>([]);
   const [structures, setStructures] = useState<FeeStructure[]>([]);
@@ -137,12 +153,38 @@ export default function FeeStructurePage() {
         description: newFeeType.description.trim(),
       });
       await loadFeeTypes();
-      setForm((f) => ({ ...f, fee_type: String(data.id) }));
+      // Auto-populate billing period based on category
+      const billingPeriod = getBillingPeriodFromCategory(newFeeType.category);
+      setForm((f) => ({ ...f, fee_type: String(data.id), billing_period: billingPeriod }));
       setNewFeeType({ name: '', category: 'monthly', description: '' });
     } catch {
       alert('Failed to add fee type');
     } finally {
       setAddingFeeType(false);
+    }
+  };
+
+  const handleFeeTypeChange = (feeTypeId: string) => {
+    setForm((f) => ({ ...f, fee_type: feeTypeId }));
+    
+    // Auto-populate billing period based on selected fee type's category
+    const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(feeTypeId));
+    if (selectedFeeType) {
+      const billingPeriod = getBillingPeriodFromCategory(selectedFeeType.category);
+      setForm((f) => ({ ...f, billing_period: billingPeriod }));
+    }
+  };
+
+  const handleEditFeeTypeChange = (feeTypeId: string) => {
+    if (!editForm) return;
+    
+    setEditForm((f) => f ? { ...f, fee_type: feeTypeId } : null);
+    
+    // Auto-populate billing period based on selected fee type's category
+    const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(feeTypeId));
+    if (selectedFeeType) {
+      const billingPeriod = getBillingPeriodFromCategory(selectedFeeType.category);
+      setEditForm((f) => f ? { ...f, billing_period: billingPeriod } : null);
     }
   };
 
@@ -246,7 +288,7 @@ export default function FeeStructurePage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Fee type</label>
               <select
                 value={form.fee_type}
-                onChange={(e) => setForm((f) => ({ ...f, fee_type: e.target.value }))}
+                onChange={(e) => handleFeeTypeChange(e.target.value)}
                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
                 required
               >
@@ -310,18 +352,21 @@ export default function FeeStructurePage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Billing period</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Billing period 
+                <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">Auto-populated</span>
+              </label>
               <select
                 value={form.billing_period}
-                onChange={(e) => setForm((f) => ({ ...f, billing_period: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                disabled
+                className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed"
               >
                 {BILLING_PERIODS.map((p) => (
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
               </select>
               <p className="text-xs text-gray-500 mt-0.5">
-                Monthly: every month. Quarterly: Jan, Apr, Jul, Oct. Half-yearly: Jan, Jul. Yearly: Jan only.
+                Billing period is automatically set based on fee type category.
               </p>
             </div>
             <div>
@@ -402,7 +447,7 @@ export default function FeeStructurePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Fee type</label>
                 <select
                   value={editForm.fee_type}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, fee_type: e.target.value } : null)}
+                  onChange={(e) => handleEditFeeTypeChange(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
                   required
                 >
@@ -437,16 +482,22 @@ export default function FeeStructurePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Billing period</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Billing period 
+                  <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">Auto-populated</span>
+                </label>
                 <select
                   value={editForm.billing_period}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, billing_period: e.target.value } : null)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                  disabled
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed"
                 >
                   {BILLING_PERIODS.map((p) => (
                     <option key={p.value} value={p.value}>{p.label}</option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Billing period is automatically set based on fee type category.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Due day (1-28)</label>
