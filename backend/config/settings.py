@@ -4,6 +4,7 @@ Django settings for School Fee Management SaaS
 from pathlib import Path
 from datetime import timedelta
 import os
+from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -84,10 +85,25 @@ TEMPLATES = [
     },
 ]
 
+DATABASE_URL = os.getenv(
+    'DATABASE_URL',
+    'postgresql://backenddb_owner:dmDUBQlLf09p@ep-tight-mountain-a1p3x4s8-pooler.ap-southeast-1.aws.neon.tech/sms?sslmode=require&channel_binding=require'
+)
+parsed_db_url = urlparse(DATABASE_URL)
+db_query_params = parse_qs(parsed_db_url.query)
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': parsed_db_url.path.lstrip('/'),
+        'USER': parsed_db_url.username,
+        'PASSWORD': parsed_db_url.password,
+        'HOST': parsed_db_url.hostname,
+        'PORT': parsed_db_url.port or 5432,
+        'OPTIONS': {
+            'sslmode': db_query_params.get('sslmode', ['require'])[0],
+            'channel_binding': db_query_params.get('channel_binding', ['require'])[0],
+        },
     }
 }
 
