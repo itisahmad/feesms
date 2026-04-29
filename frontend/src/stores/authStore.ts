@@ -13,6 +13,7 @@ export interface AuthUser {
   phone: string;
   school: number | null;
   school_name: string;
+  school_plan?: 'basic' | 'standard' | 'premium';
 }
 
 export interface AuthState {

@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'schools',
+    'payments',
 ]
 
 AUTH_USER_MODEL = 'schools.User'

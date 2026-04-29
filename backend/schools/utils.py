@@ -2,6 +2,7 @@
 Utility functions for School Fee Management
 """
 from io import BytesIO
+from decimal import Decimal
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -56,8 +57,8 @@ def generate_receipt_pdf(student_fee):
     story.append(Spacer(1, 0.3 * inch))
 
     # Payment details
-    paid_amount = sum(p.amount for p in student_fee.payments.all())
-    total = float(student_fee.total_amount)
+    paid_amount = sum((p.amount for p in student_fee.payments.all()), Decimal("0.00"))
+    total = student_fee.total_amount
     balance = total - paid_amount
 
     payment_data = [

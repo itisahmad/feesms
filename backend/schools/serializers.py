@@ -12,10 +12,11 @@ from .default_fee_types import ensure_default_fee_types_for_school
 
 class UserSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
+    school_plan = serializers.CharField(source='school.plan', read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'is_active', 'school', 'school_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'is_active', 'school', 'school_name', 'school_plan']
         read_only_fields = ['school']
 
 

@@ -11,6 +11,7 @@ const nav = [
   { href: '/dashboard/students', label: 'Students', icon: '👥' },
   { href: '/dashboard/fee-structure', label: 'Fee Structure', icon: '📋' },
   { href: '/dashboard/fees', label: 'Fee Collection', icon: '💰' },
+  { href: '/dashboard/payments', label: 'Payments', icon: '💳' },
   { href: '/dashboard/inventory', label: 'Inventory', icon: '📦' },
   { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
 ];
@@ -40,6 +41,11 @@ export default function DashboardLayout({
   const menuItems = user.role === 'owner'
     ? [...nav, { href: '/dashboard/staff', label: 'Staff Login', icon: '🧑‍💼' }]
     : nav;
+  const planLabel = user.school_plan === 'basic'
+    ? 'Basic'
+    : user.school_plan === 'premium'
+    ? 'Premium'
+    : 'Pro';
 
   return (
     <div className="min-h-screen flex bg-[#faf9f7]">
@@ -49,6 +55,9 @@ export default function DashboardLayout({
             SchoolFee Pro
           </Link>
           <p className="text-xs text-gray-500 mt-1">{user.school_name}</p>
+          <span className="inline-block mt-2 px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[11px] font-medium">
+            {planLabel} Plan
+          </span>
         </div>
         <nav className="flex-1 p-4 space-y-1">
           {menuItems.map((item) => (

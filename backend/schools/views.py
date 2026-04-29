@@ -163,6 +163,34 @@ class SchoolViewSet(viewsets.ModelViewSet):
             return School.objects.filter(id=self.request.user.school_id)
         return School.objects.none()
 
+    @action(detail=True, methods=['post'])
+    def upgrade_plan(self, request, pk=None):
+        school = self.get_object()
+        user = request.user
+        if user.role != 'owner':
+            return Response({'error': 'Only school owner can change plan.'}, status=403)
+
+        plan = (request.data.get('plan') or '').strip().lower()
+        if plan not in ('basic', 'standard', 'premium'):
+            return Response({'error': 'Invalid plan. Use basic, standard, or premium.'}, status=400)
+
+        plan_limits = {
+            'basic': {'max_students': 100, 'max_staff_logins': 1},
+            'standard': {'max_students': 300, 'max_staff_logins': 2},
+            'premium': {'max_students': 1000000, 'max_staff_logins': 5},
+        }
+        limits = plan_limits[plan]
+        school.plan = plan
+        school.max_students = limits['max_students']
+        school.max_staff_logins = limits['max_staff_logins']
+        school.save(update_fields=['plan', 'max_students', 'max_staff_logins'])
+        return Response({
+            'message': f'Plan updated to {plan}.',
+            'plan': school.plan,
+            'max_students': school.max_students,
+            'max_staff_logins': school.max_staff_logins,
+        })
+
 
 class SchoolClassViewSet(viewsets.ModelViewSet):
     serializer_class = SchoolClassSerializer

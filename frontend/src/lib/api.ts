@@ -86,6 +86,8 @@ export const deleteStaffUser = (id: number) => api.delete(`/staff-users/${id}/`)
 // Schools
 export const getSchool = () => api.get('/schools/');
 export const updateSchool = (id: number, data: object) => api.patch(`/schools/${id}/`, data);
+export const upgradeSchoolPlan = (id: number, plan: 'basic' | 'standard' | 'premium') =>
+  api.post(`/schools/${id}/upgrade_plan/`, { plan });
 
 // Classes
 export const getClasses = () => api.get('/classes/');
@@ -206,3 +208,22 @@ export const deleteBudget = (id: number) => api.delete(`/budgets/${id}/`);
 export const checkMaintenance = () => api.get('/maintenance/');
 export const getBookingSlots = () => api.get('/booking/slots/');
 export const bookSlot = (data: { date: string; time: string }) => api.post('/booking/book/', data);
+
+// Payments module
+export const getPaymentConfig = () => api.get('/payments/config/');
+export const updatePaymentConfig = (data: { platform_billing_cycle?: 'monthly' | 'yearly'; razorpay_route_account_id?: string; active?: boolean }) =>
+  api.patch('/payments/config/', data);
+export const getPlatformBillingSummary = () => api.get('/payments/platform/summary/');
+export const createPlatformOrder = (billing_cycle: 'monthly' | 'yearly') =>
+  api.post('/payments/platform/create-order/', { billing_cycle });
+export const verifyPlatformPayment = (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
+  api.post('/payments/platform/verify/', data);
+export const createParentPaymentIntent = (data: { student_fee_id: number; amount: number; notes?: string }) =>
+  api.post('/payments/parent/create-intent/', data);
+export const verifyParentPayment = (data: {
+  intent_id: number;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+  payment_mode?: string;
+}) => api.post('/payments/parent/verify/', data);
