@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { buildApiUrl } from '@/lib/env';
 
 interface TimeSlot {
   time: string;
@@ -28,36 +28,11 @@ export default function BookingPage() {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [bookingLoading, setBookingLoading] = useState(false);
-  const router = useRouter();
-
   // Check maintenance status first
-  useEffect(() => {
-    checkMaintenanceStatus();
-  }, []);
-
-  const checkMaintenanceStatus = async () => {
+  const loadSlots = useCallback(async () => {
     try {
-      const response = await fetch('/api/maintenance/');
-      const data = await response.json();
-      setMaintenanceStatus(data);
-      
-      if (data.maintenance_mode) {
-        setLoading(false);
-        return; // Don't load slots if in maintenance
-      }
-      
-      // Only load slots if not in maintenance
-      loadSlots();
-    } catch (error) {
-      console.error('Error checking maintenance status:', error);
-      setLoading(false);
-    }
-  };
-
-  const loadSlots = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/booking/slots/', {
+      const token = localStorage.getItem('access');
+      const response = await fetch(buildApiUrl('/booking/slots/'), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -82,7 +57,30 @@ export default function BookingPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const checkMaintenanceStatus = useCallback(async () => {
+    try {
+      const response = await fetch(buildApiUrl('/maintenance/'));
+      const data = await response.json();
+      setMaintenanceStatus(data);
+      
+      if (data.maintenance_mode) {
+        setLoading(false);
+        return; // Don't load slots if in maintenance
+      }
+      
+      // Only load slots if not in maintenance
+      loadSlots();
+    } catch (error) {
+      console.error('Error checking maintenance status:', error);
+      setLoading(false);
+    }
+  }, [loadSlots]);
+
+  useEffect(() => {
+    checkMaintenanceStatus();
+  }, [checkMaintenanceStatus]);
 
   const handleBooking = async () => {
     if (!selectedDate || !selectedTime) {
@@ -92,8 +90,8 @@ export default function BookingPage() {
 
     setBookingLoading(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/booking/book/', {
+      const token = localStorage.getItem('access');
+      const response = await fetch(buildApiUrl('/booking/book/'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

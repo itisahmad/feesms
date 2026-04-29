@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getStudents, createStudent, updateStudent, getClasses, getFeeStructures, getStudentFeeHistory } from '@/lib/api';
+import { getStudents, createStudent, updateStudent, getClasses, getFeeStructures, getStudentFeeHistory, getSchool } from '@/lib/api';
 
 interface Section {
   id: number;
@@ -43,6 +43,19 @@ interface Student {
 
 const getTodayDate = () => new Date().toISOString().slice(0, 10);
 
+const getDefaultChargesEffectiveFrom = (admissionDate: string, feeStartDay: number) => {
+  if (!admissionDate) return '';
+  const d = new Date(admissionDate);
+  if (Number.isNaN(d.getTime())) return admissionDate;
+
+  if (d.getDate() <= feeStartDay) {
+    return admissionDate;
+  }
+
+  const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(feeStartDay, 28));
+  return nextMonth.toISOString().slice(0, 10);
+};
+
 const getInitialStudentForm = () => {
   const today = getTodayDate();
   return {
@@ -73,6 +86,7 @@ export default function StudentsPage() {
   const [form, setForm] = useState(getInitialStudentForm());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [feeStartDay, setFeeStartDay] = useState(1);
 
   const selectedClass = classes.find((c) => c.id === parseInt(form.school_class || '0'));
   const sectionsForClass = selectedClass?.sections || [];
@@ -92,6 +106,23 @@ export default function StudentsPage() {
     getClasses()
       .then(({ data }) => setClasses(data.results || data))
       .catch(() => setClasses([]));
+
+    getSchool()
+      .then(({ data }) => {
+        const list = data.results || data;
+        const school = Array.isArray(list) ? list[0] : list;
+        setFeeStartDay(school?.fee_start_day ?? 1);
+        setForm((f) => {
+          if (!f.admission_date) return f;
+          const effectiveFrom = getDefaultChargesEffectiveFrom(f.admission_date, school?.fee_start_day ?? 1);
+          return {
+            ...f,
+            charges_effective_from: effectiveFrom,
+            fee_structure_choices: f.fee_structure_choices.map((c) => ({ ...c, effective_from: effectiveFrom })),
+          };
+        });
+      })
+      .catch(() => setFeeStartDay(1));
   }, []);
 
   useEffect(() => {
@@ -204,6 +235,14 @@ export default function StudentsPage() {
       setError('Please select at least one fee type');
       return;
     }
+    const phoneDigits = form.parent_phone.replace(/\D/g, '');
+    const normalizedPhone = phoneDigits.startsWith('91') && phoneDigits.length === 12
+      ? phoneDigits.slice(2)
+      : phoneDigits;
+    if (normalizedPhone.length !== 10 || !/^[6-9]\d{9}$/.test(normalizedPhone)) {
+      setError('Enter a valid 10-digit parent phone number');
+      return;
+    }
     setError('');
     setSaving(true);
     try {
@@ -217,7 +256,7 @@ export default function StudentsPage() {
           .filter((c) => c.fee_structure_id)
           .map((c) => ({ fee_structure_id: c.fee_structure_id, ...(c.effective_from && { effective_from: c.effective_from }) })),
         parent_name: form.parent_name,
-        parent_phone: form.parent_phone,
+        parent_phone: normalizedPhone,
         parent_email: form.parent_email,
         admission_number: form.admission_number,
         roll_number: form.roll_number,
@@ -348,11 +387,12 @@ export default function StudentsPage() {
                 value={form.admission_date}
                 onChange={(e) => {
                   const d = e.target.value;
+                  const effectiveFrom = getDefaultChargesEffectiveFrom(d, feeStartDay);
                   setForm((f) => ({
                     ...f,
                     admission_date: d,
-                    charges_effective_from: d,
-                    fee_structure_choices: f.fee_structure_choices.map((c) => ({ ...c, effective_from: d })),
+                    charges_effective_from: effectiveFrom,
+                    fee_structure_choices: f.fee_structure_choices.map((c) => ({ ...c, effective_from: effectiveFrom })),
                   }));
                 }}
                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
@@ -374,6 +414,9 @@ export default function StudentsPage() {
                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
               />
               <p className="text-xs text-gray-500 mt-1">Defaults to admission date. Can be changed to a future date if charges start later.</p>
+              <p className="text-xs text-gray-500 mt-1">
+                School fee start day is {feeStartDay}. If admission is on or before this day, current month can be charged. If admission is after this day (e.g. 28-Apr with start day 1), default becomes 1-May so April is not charged.
+              </p>
             </div>
             {feeStructures.length > 0 && (
               <div className="md:col-span-2">
@@ -427,8 +470,12 @@ export default function StudentsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, parent_phone: e.target.value }))}
                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
                 placeholder="10-digit mobile"
+                inputMode="numeric"
+                maxLength={13}
+                pattern="[0-9+ ]*"
                 required
               />
+              <p className="text-xs text-gray-500 mt-1">Enter a 10-digit mobile number, optionally with 91 prefix.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Parent email</label>

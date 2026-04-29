@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getCollectionSummary, getReceipt, generateFees, payAllPending, payAllYear, getPaymentPreview, getFeeStructures } from '@/lib/api';
+import { getCollectionSummary, getReceipt, generateFees, payAllPending, payAllYear, getPaymentPreview, getFeeStructures, getSchool } from '@/lib/api';
 
 interface FeeBreakdown {
   student_fee_id: number;
@@ -59,6 +59,7 @@ export default function FeesPage() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
   const [month, setMonth] = useState(currentMonth);
+  const [schoolCreatedAt, setSchoolCreatedAt] = useState<string | null>(null);
   const year = currentYear;
   const [data, setData] = useState<CollectionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,6 +88,16 @@ export default function FeesPage() {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    getSchool()
+      .then(({ data }) => {
+        const list = data.results || data;
+        const school = Array.isArray(list) ? list[0] : list;
+        setSchoolCreatedAt(school?.created_at || null);
+      })
+      .catch(() => setSchoolCreatedAt(null));
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -246,7 +257,21 @@ export default function FeesPage() {
   const defaulters = data?.defaulters.filter((s) => !classFilter || s.class_name.startsWith(classFilter)) || [];
 
   const canGenerateFees = month === currentMonth;
-  const availableMonths = MONTHS.slice(1, currentMonth + 1).map((m, i) => ({ value: i + 1, label: m }));
+  const schoolCreatedDate = schoolCreatedAt ? new Date(schoolCreatedAt) : null;
+  const firstAvailableMonth =
+    schoolCreatedDate && schoolCreatedDate.getFullYear() === currentYear
+      ? schoolCreatedDate.getMonth() + 1
+      : 1;
+  const availableMonths = MONTHS.slice(firstAvailableMonth, currentMonth + 1).map((label, index) => ({
+    value: firstAvailableMonth + index,
+    label,
+  }));
+
+  useEffect(() => {
+    if (month < firstAvailableMonth) {
+      setMonth(firstAvailableMonth);
+    }
+  }, [month, firstAvailableMonth]);
 
   return (
     <div>

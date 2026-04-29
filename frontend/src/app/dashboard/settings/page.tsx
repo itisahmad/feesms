@@ -19,10 +19,11 @@ const MONTHS = [
 ];
 
 export default function SettingsPage() {
-  const [school, setSchool] = useState<{ id: number; name: string; academic_year_start_month: number } | null>(null);
+  const [school, setSchool] = useState<{ id: number; name: string; academic_year_start_month: number; fee_start_day?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [startMonth, setStartMonth] = useState(4);
+  const [feeStartDay, setFeeStartDay] = useState(1);
 
   useEffect(() => {
     getSchool()
@@ -32,6 +33,7 @@ export default function SettingsPage() {
         if (s) {
           setSchool(s);
           setStartMonth(s.academic_year_start_month ?? 4);
+          setFeeStartDay(s.fee_start_day ?? 1);
         }
       })
       .catch(() => setSchool(null))
@@ -43,8 +45,8 @@ export default function SettingsPage() {
     if (!school) return;
     setSaving(true);
     try {
-      await updateSchool(school.id, { academic_year_start_month: startMonth });
-      setSchool((prev) => prev ? { ...prev, academic_year_start_month: startMonth } : null);
+      await updateSchool(school.id, { academic_year_start_month: startMonth, fee_start_day: feeStartDay });
+      setSchool((prev) => prev ? { ...prev, academic_year_start_month: startMonth, fee_start_day: feeStartDay } : null);
     } catch {
       alert('Failed to update settings');
     } finally {
@@ -79,6 +81,20 @@ export default function SettingsPage() {
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Fee start day (1-28)</label>
+            <input
+              type="number"
+              min={1}
+              max={28}
+              value={feeStartDay}
+              onChange={(e) => setFeeStartDay(Math.max(1, Math.min(28, parseInt(e.target.value || '1', 10))))}
+              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Example: if this is set to 1, then joining on 1st (or before start day) can charge current month. Joining on 28-Apr will default charges from 1-May, so April is not charged unless you change it manually.
+            </p>
           </div>
           <button type="submit" disabled={saving} className="px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
             {saving ? 'Saving...' : 'Save'}

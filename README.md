@@ -48,6 +48,10 @@ npm run dev
 
 Frontend runs at http://localhost:3000
 
+## Database Schema
+
+See `DB_SCHEMA.md` for the current backend model relationships, constraints, and schema notes.
+
 ### Environment
 
 Create `backend/.env`:

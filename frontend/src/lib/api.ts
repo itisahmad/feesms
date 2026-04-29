@@ -1,9 +1,8 @@
 import axios from 'axios';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://feesms-be79.vercel.app/api';
+import { API_BASE_URL, buildApiUrl } from './env';
 
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -24,7 +23,7 @@ api.interceptors.response.use(
       const refresh = localStorage.getItem('refresh');
       if (refresh) {
         try {
-          const { data } = await axios.post(`${API_URL}/token/refresh/`, { refresh });
+          const { data } = await axios.post(buildApiUrl('/token/refresh/'), { refresh });
           localStorage.setItem('access', data.access);
           original.headers.Authorization = `Bearer ${data.access}`;
           return api(original);
@@ -111,7 +110,7 @@ export const getStudentFeeHistory = (studentId: number) => api.get(`/students/${
 export const getFeeTypes = () => api.get('/fee-types/');
 export const createFeeType = (data: { name: string; description?: string; billing_period?: string }) =>
   api.post('/fee-types/', data);
-export const updateFeeType = (id: number, data: { name?: string; description?: string }) =>
+export const updateFeeType = (id: number, data: { name?: string; description?: string; billing_period?: string }) =>
   api.patch(`/fee-types/${id}/`, data);
 export const deleteFeeType = (id: number) => api.delete(`/fee-types/${id}/`);
 
