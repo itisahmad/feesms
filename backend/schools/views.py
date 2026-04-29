@@ -25,6 +25,7 @@ from .serializers import (
     StudentFeeSerializer, StudentFeeCreateSerializer, FeePaymentSerializer,
     ExpenseCategorySerializer, VendorSerializer, ExpenseSerializer, BudgetSerializer, ExpenseReportSerializer
 )
+from .default_fee_types import ensure_default_fee_types_for_school
 
 
 class RegisterView(APIView):
@@ -48,6 +49,7 @@ class RegisterView(APIView):
 
 class CurrentUserView(APIView):
     def get(self, request):
+        ensure_default_fee_types_for_school(request.user.school)
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
 
