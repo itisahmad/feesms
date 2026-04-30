@@ -99,6 +99,34 @@ class ParentPaymentIntent(models.Model):
         return f"Parent payment intent {self.id} - {self.school.name}"
 
 
+class FeeCollectionCheckoutSession(models.Model):
+    """
+    Razorpay Standard Checkout for bulk fee actions (monthly / all pending / full year).
+    Server creates an order; after verify, school fee payments are recorded.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_COMPLETED = "completed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_COMPLETED, "Completed"),
+    ]
+
+    school = models.ForeignKey("schools.School", on_delete=models.CASCADE, related_name="fee_collection_checkouts")
+    created_by = models.ForeignKey("schools.User", on_delete=models.SET_NULL, null=True, blank=True)
+    provider_order_id = models.CharField(max_length=120, unique=True)
+    amount_inr = models.DecimalField(max_digits=12, decimal_places=2)
+    amount_paise = models.PositiveIntegerField(default=0)
+    collection_mode = models.CharField(max_length=20)
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Fee checkout {self.provider_order_id or self.id} ({self.status})"
+
+
 class ParentPaymentTransaction(models.Model):
     STATUS_CHOICES = [
         ("created", "Created"),

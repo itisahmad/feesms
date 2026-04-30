@@ -2,7 +2,24 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getCollectionSummary, getReceipt, generateFees, payAllPending, payAllYear, getPaymentPreview, getFeeStructures, getSchool } from '@/lib/api';
+import {
+  getCollectionSummary,
+  getReceipt,
+  generateFees,
+  payAllPending,
+  payAllYear,
+  getPaymentPreview,
+  getFeeStructures,
+  getSchool,
+  createFeeCollectionOrder,
+  verifyFeeCollectionPayment,
+} from '@/lib/api';
+
+declare global {
+  interface Window {
+    Razorpay: new (options: Record<string, unknown>) => { open: () => void };
+  }
+}
 
 interface FeeBreakdown {
   student_fee_id: number;
@@ -80,6 +97,19 @@ export default function FeesPage() {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
+
+  const loadRazorpayScript = () =>
+    new Promise<boolean>((resolve) => {
+      if (typeof window !== 'undefined' && window.Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
 
   const loadData = (bustCache = false) => {
     setLoading(true);
@@ -177,38 +207,112 @@ export default function FeesPage() {
     if (!payAllStudent) return;
     setSaving(true);
     try {
-      if (payMode === 'yearly') {
-        await payAllYear({
+      const executePayment = async (mode: string, transactionId?: string) => {
+        const baseNotes =
+          paymentForm.notes ||
+          (payMode === 'yearly'
+            ? 'Full year payment (selected fee types)'
+            : 'All pending payment');
+        const notes = transactionId ? `${baseNotes} | Razorpay: ${transactionId}` : baseNotes;
+
+        if (payMode === 'yearly') {
+          await payAllYear({
+            student_id: payAllStudent.student_id,
+            month,
+            year,
+            payment_date: paymentForm.payment_date,
+            payment_mode: mode,
+            notes,
+            fee_structure_ids: selectedFeeStructureIds,
+          });
+        } else if (payMode === 'all_pending') {
+          await payAllPending({
+            student_id: payAllStudent.student_id,
+            month,
+            year,
+            payment_date: paymentForm.payment_date,
+            payment_mode: mode,
+            notes,
+            only_this_month: false,
+          });
+        } else {
+          await payAllPending({
+            student_id: payAllStudent.student_id,
+            month,
+            year,
+            payment_date: paymentForm.payment_date,
+            payment_mode: mode,
+            notes,
+            only_this_month: true,
+            fee_structure_ids: selectedFeeStructureIds,
+          });
+        }
+      };
+
+      if (paymentForm.payment_mode === 'Online') {
+        const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+        if (!key) {
+          throw new Error('NEXT_PUBLIC_RAZORPAY_KEY_ID is missing');
+        }
+        const scriptOk = await loadRazorpayScript();
+        if (!scriptOk || !window.Razorpay) {
+          throw new Error('Failed to load Razorpay checkout');
+        }
+
+        const collection_mode =
+          payMode === 'yearly' ? 'yearly' : payMode === 'all_pending' ? 'all_pending' : 'monthly';
+
+        const { data: co } = await createFeeCollectionOrder({
           student_id: payAllStudent.student_id,
           month,
           year,
           payment_date: paymentForm.payment_date,
-          payment_mode: paymentForm.payment_mode,
-          notes: paymentForm.notes || 'Full year payment (selected fee types)',
-          fee_structure_ids: selectedFeeStructureIds,
+          collection_mode,
+          fee_structure_ids: payMode === 'all_pending' ? undefined : selectedFeeStructureIds,
+          notes: paymentForm.notes || undefined,
         });
-      } else if (payMode === 'all_pending') {
-        await payAllPending({
-          student_id: payAllStudent.student_id,
-          month,
-          year,
-          payment_date: paymentForm.payment_date,
-          payment_mode: paymentForm.payment_mode,
-          notes: paymentForm.notes || 'All pending payment',
-          only_this_month: false,
+
+        await new Promise<void>((resolve, reject) => {
+          const rz = new window.Razorpay({
+            key,
+            amount: co.amount_paise,
+            currency: co.currency || 'INR',
+            order_id: co.order_id,
+            name: 'SchoolFee Pro',
+            description: `${payAllStudent.student_name} — fee payment`,
+            handler: async (response: unknown) => {
+              try {
+                const r = response as {
+                  razorpay_order_id?: string;
+                  razorpay_payment_id?: string;
+                  razorpay_signature?: string;
+                };
+                await verifyFeeCollectionPayment({
+                  checkout_session_id: co.checkout_session_id,
+                  razorpay_order_id: r.razorpay_order_id || co.order_id,
+                  razorpay_payment_id: r.razorpay_payment_id || '',
+                  razorpay_signature: r.razorpay_signature || '',
+                });
+                resolve();
+              } catch (err) {
+                reject(err);
+              }
+            },
+            modal: {
+              ondismiss: () => reject(new Error('Payment cancelled by the user')),
+            },
+            prefill: {
+              name: payAllStudent.student_name,
+              contact: payAllStudent.parent_phone,
+            },
+            theme: { color: '#0f766e' },
+          });
+          rz.open();
         });
       } else {
-        await payAllPending({
-          student_id: payAllStudent.student_id,
-          month,
-          year,
-          payment_date: paymentForm.payment_date,
-          payment_mode: paymentForm.payment_mode,
-          notes: paymentForm.notes || 'All pending payment',
-          only_this_month: true,
-          fee_structure_ids: selectedFeeStructureIds,
-        });
+        await executePayment('Cash');
       }
+
       setPaymentForm({ amount: '', payment_date: new Date().toISOString().slice(0, 10), payment_mode: 'Cash', notes: '' });
       setPayAllStudent(null);
       setPayMode('monthly');
@@ -216,7 +320,8 @@ export default function FeesPage() {
       loadData(true);
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: { error?: string; detail?: string } } };
-      alert(axErr?.response?.data?.error || axErr?.response?.data?.detail || 'Failed to record payment');
+      const fallbackMessage = err instanceof Error ? err.message : 'Failed to record payment';
+      alert(axErr?.response?.data?.error || axErr?.response?.data?.detail || fallbackMessage);
     } finally {
       setSaving(false);
     }
@@ -753,10 +858,8 @@ export default function FeesPage() {
                   onChange={(e) => setPaymentForm((f) => ({ ...f, payment_mode: e.target.value }))}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
                 >
-                  <option>Cash</option>
-                  <option>UPI</option>
-                  <option>Bank Transfer</option>
-                  <option>Cheque</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Online">Online (Razorpay)</option>
                 </select>
               </div>
               <div>

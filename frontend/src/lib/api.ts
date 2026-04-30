@@ -227,3 +227,20 @@ export const verifyParentPayment = (data: {
   razorpay_signature: string;
   payment_mode?: string;
 }) => api.post('/payments/parent/verify/', data);
+
+export const createFeeCollectionOrder = (data: {
+  student_id: number;
+  month: number;
+  year: number;
+  payment_date: string;
+  collection_mode: 'monthly' | 'yearly' | 'all_pending';
+  fee_structure_ids?: number[];
+  notes?: string;
+}) => api.post('/payments/fee-collection/create-order/', data);
+
+export const verifyFeeCollectionPayment = (data: {
+  checkout_session_id: number;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}) => api.post('/payments/fee-collection/verify/', data);

@@ -2,9 +2,7 @@
 
 A full-stack SaaS application for school fee management, built for the Bihar market. Built with **Next.js** (frontend) and **Django** (backend).
 
-<!-- testing creds of the razory pay -->
-rzp_test_SjJRWkLJGVGSZ9   --> api key
-iU6k177rHmj6d0kUXUQIT3EX  --> secret key 
+<!-- Never commit payment secrets in repository -->
 
 ## Features
 

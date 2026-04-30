@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    FeeCollectionCreateOrderView,
+    FeeCollectionVerifyView,
     PaymentConfigView,
     PlatformBillingSummaryView,
     PlatformCreateOrderView,
@@ -17,4 +19,6 @@ urlpatterns = [
     path("platform/verify/", PlatformVerifyPaymentView.as_view()),
     path("parent/create-intent/", ParentCreateIntentView.as_view()),
     path("parent/verify/", ParentVerifyPaymentView.as_view()),
+    path("fee-collection/create-order/", FeeCollectionCreateOrderView.as_view()),
+    path("fee-collection/verify/", FeeCollectionVerifyView.as_view()),
 ]
