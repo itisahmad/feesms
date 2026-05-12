@@ -1,9 +1,8 @@
 import axios from 'axios';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://feesms-be79.vercel.app/api';
+import { API_BASE_URL, buildApiUrl } from './env';
 
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -24,7 +23,7 @@ api.interceptors.response.use(
       const refresh = localStorage.getItem('refresh');
       if (refresh) {
         try {
-          const { data } = await axios.post(`${API_URL}/token/refresh/`, { refresh });
+          const { data } = await axios.post(buildApiUrl('/token/refresh/'), { refresh });
           localStorage.setItem('access', data.access);
           original.headers.Authorization = `Bearer ${data.access}`;
           return api(original);
@@ -87,6 +86,8 @@ export const deleteStaffUser = (id: number) => api.delete(`/staff-users/${id}/`)
 // Schools
 export const getSchool = () => api.get('/schools/');
 export const updateSchool = (id: number, data: object) => api.patch(`/schools/${id}/`, data);
+export const upgradeSchoolPlan = (id: number, plan: 'basic' | 'standard' | 'premium') =>
+  api.post(`/schools/${id}/upgrade_plan/`, { plan });
 
 // Classes
 export const getClasses = () => api.get('/classes/');
@@ -111,7 +112,7 @@ export const getStudentFeeHistory = (studentId: number) => api.get(`/students/${
 export const getFeeTypes = () => api.get('/fee-types/');
 export const createFeeType = (data: { name: string; description?: string; billing_period?: string }) =>
   api.post('/fee-types/', data);
-export const updateFeeType = (id: number, data: { name?: string; description?: string }) =>
+export const updateFeeType = (id: number, data: { name?: string; description?: string; billing_period?: string }) =>
   api.patch(`/fee-types/${id}/`, data);
 export const deleteFeeType = (id: number) => api.delete(`/fee-types/${id}/`);
 
@@ -207,3 +208,39 @@ export const deleteBudget = (id: number) => api.delete(`/budgets/${id}/`);
 export const checkMaintenance = () => api.get('/maintenance/');
 export const getBookingSlots = () => api.get('/booking/slots/');
 export const bookSlot = (data: { date: string; time: string }) => api.post('/booking/book/', data);
+
+// Payments module
+export const getPaymentConfig = () => api.get('/payments/config/');
+export const updatePaymentConfig = (data: { platform_billing_cycle?: 'monthly' | 'yearly'; razorpay_route_account_id?: string; active?: boolean }) =>
+  api.patch('/payments/config/', data);
+export const getPlatformBillingSummary = () => api.get('/payments/platform/summary/');
+export const createPlatformOrder = (billing_cycle: 'monthly' | 'yearly') =>
+  api.post('/payments/platform/create-order/', { billing_cycle });
+export const verifyPlatformPayment = (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
+  api.post('/payments/platform/verify/', data);
+export const createParentPaymentIntent = (data: { student_fee_id: number; amount: number; notes?: string }) =>
+  api.post('/payments/parent/create-intent/', data);
+export const verifyParentPayment = (data: {
+  intent_id: number;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+  payment_mode?: string;
+}) => api.post('/payments/parent/verify/', data);
+
+export const createFeeCollectionOrder = (data: {
+  student_id: number;
+  month: number;
+  year: number;
+  payment_date: string;
+  collection_mode: 'monthly' | 'yearly' | 'all_pending';
+  fee_structure_ids?: number[];
+  notes?: string;
+}) => api.post('/payments/fee-collection/create-order/', data);
+
+export const verifyFeeCollectionPayment = (data: {
+  checkout_session_id: number;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}) => api.post('/payments/fee-collection/verify/', data);

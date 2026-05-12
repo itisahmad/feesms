@@ -2,6 +2,8 @@
 
 A full-stack SaaS application for school fee management, built for the Bihar market. Built with **Next.js** (frontend) and **Django** (backend).
 
+<!-- Never commit payment secrets in repository -->
+
 ## Features
 
 - **School owner signup & login** – Register your school with 30-day free trial
@@ -47,6 +49,14 @@ npm run dev
 ```
 
 Frontend runs at http://localhost:3000
+
+## Database Schema
+
+See `DB_SCHEMA.md` for the current backend model relationships, constraints, and schema notes.
+
+## Payments
+
+See `PAYMENT.md` for payment architecture, Razorpay flow separation, APIs, and setup.
 
 ### Environment
 

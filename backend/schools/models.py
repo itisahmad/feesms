@@ -3,7 +3,7 @@ School Fee Management Models for Bihar Market
 """
 from django.db import models
 from django.contrib.auth.models import AbstractUser
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 
 
@@ -37,6 +37,11 @@ class School(models.Model):
     max_students = models.IntegerField(default=300)  # 100 for basic, 300 for standard, unlimited for premium
     max_staff_logins = models.IntegerField(default=2)  # 1 for basic, 2 for standard, 5 for premium
     academic_year_start_month = models.IntegerField(default=4)  # 1=Jan, 3=Mar, 4=Apr, etc. When academic year begins
+    fee_start_day = models.IntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(28)],
+        help_text='Charges from current month apply only when student joins on/before this day.',
+    )
     trial_ends_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

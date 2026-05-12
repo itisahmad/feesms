@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getFeeTypes, createFeeType, getFeeStructures, createFeeStructure, updateFeeStructure, deleteFeeStructure, getClasses, getSchool } from '@/lib/api';
+import { getFeeTypes, createFeeType, updateFeeType, getFeeStructures, createFeeStructure, updateFeeStructure, deleteFeeStructure, getClasses, getSchool } from '@/lib/api';
 
 interface FeeType {
   id: number;
   name: string;
   billing_period: string;
   description?: string;
+  billing_period_display?: string;
 }
 
 interface SchoolClass {
@@ -67,29 +68,6 @@ const BILLING_PERIODS = [
   { value: 'one_time', label: 'One-Time Payment' },
 ] as const;
 
-const FEE_TYPE_CATEGORIES = [
-  { value: 'monthly', label: 'Monthly/Regular' },
-  { value: 'one_time', label: 'One-Time/Annual' },
-  { value: 'books', label: 'Book & Stationery' },
-  { value: 'exam', label: 'Exam & Other' },
-] as const;
-
-// Map fee type categories to default billing periods
-const getBillingPeriodFromCategory = (category: string): string => {
-  switch (category) {
-    case 'monthly':
-      return 'monthly';
-    case 'one_time':
-      return 'one_time';
-    case 'books':
-      return 'monthly'; // Books are typically monthly or one-time, defaulting to monthly
-    case 'exam':
-      return 'quarterly'; // Exam fees are typically quarterly
-    default:
-      return 'monthly';
-  }
-};
-
 export default function FeeStructurePage() {
   const [feeTypes, setFeeTypes] = useState<FeeType[]>([]);
   const [structures, setStructures] = useState<FeeStructure[]>([]);
@@ -113,7 +91,15 @@ export default function FeeStructurePage() {
   const [editForm, setEditForm] = useState<typeof form | null>(null);
   const [saving, setSaving] = useState(false);
   const [addingFeeType, setAddingFeeType] = useState(false);
+  const [updatingFeeType, setUpdatingFeeType] = useState(false);
+  const [activeFeeTypePicker, setActiveFeeTypePicker] = useState<'create' | 'edit' | null>(null);
   const [newFeeType, setNewFeeType] = useState({
+    name: '',
+    billing_period: 'monthly',
+    description: '',
+  });
+  const [editingFeeTypeId, setEditingFeeTypeId] = useState<number | null>(null);
+  const [editingFeeType, setEditingFeeType] = useState({
     name: '',
     billing_period: 'monthly',
     description: '',
@@ -186,8 +172,200 @@ export default function FeeStructurePage() {
     }
   };
 
+  const startFeeTypeEdit = (feeType: FeeType) => {
+    setEditingFeeTypeId(feeType.id);
+    setEditingFeeType({
+      name: feeType.name,
+      billing_period: feeType.billing_period,
+      description: feeType.description || '',
+    });
+  };
+
+  const resetFeeTypeEditor = () => {
+    setEditingFeeTypeId(null);
+    setEditingFeeType({
+      name: '',
+      billing_period: 'monthly',
+      description: '',
+    });
+  };
+
+  const handleUpdateFeeType = async () => {
+    if (!editingFeeTypeId) return;
+
+    const name = editingFeeType.name.trim();
+    if (!name) {
+      alert('Please enter fee type name');
+      return;
+    }
+
+    setUpdatingFeeType(true);
+    try {
+      await updateFeeType(editingFeeTypeId, {
+        name,
+        billing_period: editingFeeType.billing_period,
+        description: editingFeeType.description.trim(),
+      });
+      await loadFeeTypes();
+
+      const updatedFeeType = feeTypes.find((ft) => ft.id === editingFeeTypeId);
+      const billingPeriod = updatedFeeType?.billing_period || editingFeeType.billing_period;
+
+      if (form.fee_type === String(editingFeeTypeId)) {
+        setForm((f) => ({ ...f, billing_period: billingPeriod }));
+      }
+      if (editForm?.fee_type === String(editingFeeTypeId)) {
+        setEditForm((f) => (f ? { ...f, billing_period: billingPeriod } : null));
+      }
+
+      resetFeeTypeEditor();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(msg || 'Failed to update fee type');
+    } finally {
+      setUpdatingFeeType(false);
+    }
+  };
+
+  const renderFeeTypePicker = (
+    selectedValue: string,
+    onSelect: (value: string) => void,
+    pickerMode: 'create' | 'edit'
+  ) => {
+    const selectedFeeType = feeTypes.find((ft) => ft.id === parseInt(selectedValue, 10));
+    const isOpen = activeFeeTypePicker === pickerMode;
+
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setActiveFeeTypePicker((prev) => (prev === pickerMode ? null : pickerMode))}
+          className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 text-left bg-white"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className={selectedFeeType ? 'text-gray-900' : 'text-gray-400'}>
+              {selectedFeeType ? selectedFeeType.name : 'Select'}
+            </span>
+            <span className="text-xs text-gray-400">{isOpen ? '▲' : '▼'}</span>
+          </div>
+        </button>
+
+        {isOpen && (
+          <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-lg">
+            <div className="max-h-72 overflow-y-auto p-2 space-y-1">
+              {feeTypes.map((ft) => (
+                <div
+                  key={ft.id}
+                  className={`rounded-lg border px-3 py-2 ${
+                    selectedValue === String(ft.id) ? 'border-teal-200 bg-teal-50' : 'border-transparent bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelect(String(ft.id));
+                        setActiveFeeTypePicker(null);
+                      }}
+                      className="flex-1 text-left"
+                    >
+                      <div className="text-sm font-medium text-gray-800">{ft.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {ft.billing_period_display || BILLING_PERIODS.find((p) => p.value === ft.billing_period)?.label || ft.billing_period}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startFeeTypeEdit(ft)}
+                      className="text-xs font-medium text-teal-600 hover:text-teal-700"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50 rounded-b-xl">
+              {editingFeeTypeId ? (
+                <>
+                  <p className="text-xs font-medium text-gray-600">Edit fee type</p>
+                  <input
+                    type="text"
+                    value={editingFeeType.name}
+                    onChange={(e) => setEditingFeeType((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Fee type name"
+                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                  />
+                  <select
+                    value={editingFeeType.billing_period}
+                    onChange={(e) => setEditingFeeType((f) => ({ ...f, billing_period: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                  >
+                    {BILLING_PERIODS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleUpdateFeeType}
+                      disabled={updatingFeeType}
+                      className="px-3 py-1.5 rounded bg-teal-600 text-white text-sm disabled:opacity-50"
+                    >
+                      {updatingFeeType ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetFeeTypeEditor}
+                      className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-medium text-gray-600">Add extra fee type</p>
+                  <input
+                    type="text"
+                    value={newFeeType.name}
+                    onChange={(e) => setNewFeeType((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="e.g. Smart Class, Activity"
+                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                  />
+                  <select
+                    value={newFeeType.billing_period}
+                    onChange={(e) => setNewFeeType((f) => ({ ...f, billing_period: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                  >
+                    {BILLING_PERIODS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddFeeType}
+                    disabled={addingFeeType}
+                    className="px-3 py-1.5 rounded bg-teal-600 text-white text-sm disabled:opacity-50"
+                  >
+                    {addingFeeType ? 'Adding...' : '+ Add fee type'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.fee_type) {
+      alert('Please select a fee type');
+      return;
+    }
     if (!form.school_class) {
       alert('Please select a class');
       return;
@@ -231,6 +409,10 @@ export default function FeeStructurePage() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editForm?.fee_type) {
+      alert('Please select a fee type');
+      return;
+    }
     if (!editingId || !editForm?.school_class) return;
     setSaving(true);
     try {
@@ -282,44 +464,7 @@ export default function FeeStructurePage() {
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Fee type</label>
-              <select
-                value={form.fee_type}
-                onChange={(e) => handleFeeTypeChange(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                required
-              >
-                <option value="">Select</option>
-                {feeTypes.map((ft) => (
-                  <option key={ft.id} value={ft.id}>{ft.name}</option>
-                ))}
-              </select>
-              <div className="mt-2 p-2 rounded-lg bg-gray-50 border border-gray-100 space-y-2">
-                <p className="text-xs text-gray-500">Add custom fee type for your school</p>
-                <input
-                  type="text"
-                  value={newFeeType.name}
-                  onChange={(e) => setNewFeeType((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Smart Class, Activity"
-                  className="w-full px-3 py-2 text-sm rounded border border-gray-200"
-                />
-                <select
-                  value={newFeeType.billing_period}
-                  onChange={(e) => setNewFeeType((f) => ({ ...f, billing_period: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm rounded border border-gray-200"
-                >
-                  {BILLING_PERIODS.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleAddFeeType}
-                  disabled={addingFeeType}
-                  className="px-3 py-1.5 rounded bg-teal-600 text-white text-sm disabled:opacity-50"
-                >
-                  {addingFeeType ? 'Adding...' : '+ Add fee type'}
-                </button>
-              </div>
+              {renderFeeTypePicker(form.fee_type, handleFeeTypeChange, 'create')}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
@@ -449,16 +594,7 @@ export default function FeeStructurePage() {
             <form onSubmit={handleUpdate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Fee type</label>
-                <select
-                  value={editForm.fee_type}
-                  onChange={(e) => handleEditFeeTypeChange(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                  required
-                >
-                  {feeTypes.map((ft) => (
-                    <option key={ft.id} value={ft.id}>{ft.name}</option>
-                  ))}
-                </select>
+                {renderFeeTypePicker(editForm.fee_type, handleEditFeeTypeChange, 'edit')}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>

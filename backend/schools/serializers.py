@@ -3,17 +3,20 @@ REST API Serializers
 """
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from datetime import date
 from .models import (User, School, SchoolClass, Section, Student, FeeType, FeeStructure, 
                      StudentFeeStructureChoice, StudentFee, FeePayment, 
                      ExpenseCategory, Vendor, Expense, Budget)
+from .default_fee_types import ensure_default_fee_types_for_school
 
 
 class UserSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
+    school_plan = serializers.CharField(source='school.plan', read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'is_active', 'school', 'school_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'is_active', 'school', 'school_name', 'school_plan']
         read_only_fields = ['school']
 
 
@@ -53,6 +56,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         from django.utils import timezone
         school.trial_ends_at = timezone.now() + timedelta(days=30)
         school.save()
+        ensure_default_fee_types_for_school(school)
 
         # Create default classes for Bihar schools
         from .models import Section
@@ -126,7 +130,7 @@ class SchoolSerializer(serializers.ModelSerializer):
     class Meta:
         model = School
         fields = ['id', 'name', 'address', 'city', 'state', 'phone', 'email', 'logo', 'plan',
-                  'max_students', 'max_staff_logins', 'academic_year_start_month', 'trial_ends_at', 'created_at']
+                  'max_students', 'max_staff_logins', 'academic_year_start_month', 'fee_start_day', 'trial_ends_at', 'created_at']
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -199,11 +203,33 @@ class StudentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if 'roll_number' in attrs:
             attrs['roll_number'] = (attrs.get('roll_number') or '').strip()
+        if 'parent_phone' in attrs:
+            raw_phone = (attrs.get('parent_phone') or '').strip()
+            digits = ''.join(ch for ch in raw_phone if ch.isdigit())
+            if digits.startswith('91') and len(digits) == 12:
+                digits = digits[2:]
+            if len(digits) != 10:
+                raise serializers.ValidationError({'parent_phone': 'Enter a valid 10-digit parent phone number.'})
+            if digits[0] not in '6789':
+                raise serializers.ValidationError({'parent_phone': 'Parent phone number must start with 6, 7, 8, or 9.'})
+            attrs['parent_phone'] = digits
 
         school = self._get_school(attrs)
         school_class = attrs.get('school_class') or getattr(self.instance, 'school_class', None)
         section = attrs.get('section') or getattr(self.instance, 'section', None)
         roll_number = attrs.get('roll_number', getattr(self.instance, 'roll_number', ''))
+        admission_date = attrs.get('admission_date', getattr(self.instance, 'admission_date', None))
+        charges_effective_from = attrs.get('charges_effective_from', getattr(self.instance, 'charges_effective_from', None))
+
+        if admission_date and not charges_effective_from:
+            fee_start_day = getattr(school, 'fee_start_day', 1) if school else 1
+            if admission_date.day <= fee_start_day:
+                attrs['charges_effective_from'] = admission_date
+            else:
+                if admission_date.month == 12:
+                    attrs['charges_effective_from'] = date(admission_date.year + 1, 1, min(fee_start_day, 28))
+                else:
+                    attrs['charges_effective_from'] = date(admission_date.year, admission_date.month + 1, min(fee_start_day, 28))
 
         if roll_number and school and school_class and section:
             qs = Student.objects.filter(

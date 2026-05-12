@@ -25,6 +25,9 @@ from .serializers import (
     StudentFeeSerializer, StudentFeeCreateSerializer, FeePaymentSerializer,
     ExpenseCategorySerializer, VendorSerializer, ExpenseSerializer, BudgetSerializer, ExpenseReportSerializer
 )
+from .default_fee_types import ensure_default_fee_types_for_school
+from .fee_periods import is_struct_billable_for_period
+from .bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
 
 
 class RegisterView(APIView):
@@ -48,6 +51,7 @@ class RegisterView(APIView):
 
 class CurrentUserView(APIView):
     def get(self, request):
+        ensure_default_fee_types_for_school(request.user.school)
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
 
@@ -160,6 +164,34 @@ class SchoolViewSet(viewsets.ModelViewSet):
         if self.request.user.school:
             return School.objects.filter(id=self.request.user.school_id)
         return School.objects.none()
+
+    @action(detail=True, methods=['post'])
+    def upgrade_plan(self, request, pk=None):
+        school = self.get_object()
+        user = request.user
+        if user.role != 'owner':
+            return Response({'error': 'Only school owner can change plan.'}, status=403)
+
+        plan = (request.data.get('plan') or '').strip().lower()
+        if plan not in ('basic', 'standard', 'premium'):
+            return Response({'error': 'Invalid plan. Use basic, standard, or premium.'}, status=400)
+
+        plan_limits = {
+            'basic': {'max_students': 100, 'max_staff_logins': 1},
+            'standard': {'max_students': 300, 'max_staff_logins': 2},
+            'premium': {'max_students': 1000000, 'max_staff_logins': 5},
+        }
+        limits = plan_limits[plan]
+        school.plan = plan
+        school.max_students = limits['max_students']
+        school.max_staff_logins = limits['max_staff_logins']
+        school.save(update_fields=['plan', 'max_students', 'max_staff_logins'])
+        return Response({
+            'message': f'Plan updated to {plan}.',
+            'plan': school.plan,
+            'max_students': school.max_students,
+            'max_staff_logins': school.max_staff_logins,
+        })
 
 
 class SchoolClassViewSet(viewsets.ModelViewSet):
@@ -420,38 +452,6 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             qs = qs.filter(year=int(year))
         return qs
 
-    def _is_struct_billable_for_period(self, struct, month, year, student, choice=None):
-        """Decide whether a fee structure should be billed for a month/year for a student."""
-        start_date = None
-        if choice and choice.effective_from:
-            start_date = choice.effective_from
-        if not start_date:
-            start_date = getattr(student, 'charges_effective_from', None) or student.admission_date
-
-        # Fallback to existing class-level rules when no student-specific start date exists.
-        if not start_date:
-            return struct.should_bill_for_month(month)
-
-        month_diff = (year - start_date.year) * 12 + (month - start_date.month)
-        if month_diff < 0:
-            return False
-
-        # Use billing period from the fee type instead of the structure
-        billing_period = struct.fee_type.billing_period
-        
-        if billing_period == 'monthly':
-            return True
-        if billing_period == 'quarterly':
-            return month_diff % 3 == 0
-        if billing_period == 'half_yearly':
-            return month_diff % 6 == 0
-        if billing_period == 'yearly':
-            return month_diff % 12 == 0
-        if billing_period == 'one_time':
-            return month_diff == 0
-
-        return True
-
     def list(self, request, *args, **kwargs):
         self.queryset = self.get_queryset_filtered()
         return super().list(request, *args, **kwargs)
@@ -496,7 +496,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             if sf.fee_structure_id not in choice_ids_map.get(sf.student_id, []):
                 continue
             choice = choice_map.get((sf.student_id, sf.fee_structure_id))
-            if not self._is_struct_billable_for_period(sf.fee_structure, sf.month, sf.year, sf.student, choice):
+            if not is_struct_billable_for_period(sf.fee_structure, sf.month, sf.year, sf.student, choice):
                 continue
             eff_from = (choice.effective_from if choice and choice.effective_from else None) or getattr(sf.student, 'charges_effective_from', None) or sf.student.admission_date
             if eff_from:
@@ -830,7 +830,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
             else:
                 eff_y, eff_m = None, None
             for m, y in months_years:
-                if not self._is_struct_billable_for_period(struct, m, y, student, choice):
+                if not is_struct_billable_for_period(struct, m, y, student, choice):
                     continue
                 if eff_y is not None and (y < eff_y or (y == eff_y and m < eff_m)):
                     continue
@@ -884,79 +884,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def pay_all_pending(self, request):
         """Pay all unpaid fees for a student up to the given month in one go"""
-        school = request.user.school
-        if not school:
-            return Response({'error': 'No school'}, status=400)
-        student_id = request.data.get('student_id')
-        month = request.data.get('month')
-        year = request.data.get('year')
-        payment_date = request.data.get('payment_date')
-        payment_mode = request.data.get('payment_mode', 'Cash')
-        notes = request.data.get('notes', '') or 'All pending payment'
-        raw_selected_ids = request.data.get('fee_structure_ids')
-        selected_fee_structure_ids = None
-        if raw_selected_ids is not None:
-            try:
-                if isinstance(raw_selected_ids, list):
-                    selected_fee_structure_ids = [int(x) for x in raw_selected_ids]
-                elif str(raw_selected_ids).strip() == '':
-                    selected_fee_structure_ids = []
-                else:
-                    selected_fee_structure_ids = [int(x) for x in str(raw_selected_ids).split(',') if str(x).strip()]
-            except (ValueError, TypeError):
-                return Response({'error': 'fee_structure_ids must be a list of integers'}, status=400)
-        if not student_id or month is None or not year or not payment_date:
-            return Response({'error': 'student_id, month, year, payment_date required'}, status=400)
-        try:
-            from datetime import date
-            payment_date = date.fromisoformat(str(payment_date))
-        except (ValueError, TypeError):
-            return Response({'error': 'Invalid payment_date'}, status=400)
-        month, year = int(month), int(year)
-        student = Student.objects.filter(school=school, id=student_id).first()
-        if not student:
-            return Response({'error': 'Student not found'}, status=404)
-        only_this_month = request.data.get('only_this_month', False)
-        if only_this_month:
-            fee_filter = Q(month=month, year=year)
-        else:
-            fee_filter = Q(year__lt=year) | Q(year=year, month__lte=month)
-        student_fees = StudentFee.objects.filter(
-            student_id=student_id,
-            student__school=school,
-        ).filter(fee_filter).select_related('fee_structure__fee_type').prefetch_related('payments')
-        if selected_fee_structure_ids is not None:
-            student_fees = student_fees.filter(fee_structure_id__in=selected_fee_structure_ids)
-        to_pay = []
-        for sf in student_fees:
-            paid = sum(float(p.amount) for p in sf.payments.all())
-            balance = float(sf.total_amount) - paid
-            if balance > 0:
-                to_pay.append((sf, balance))
-        if not to_pay:
-            err = 'No unpaid fees for this student for the selected month' if only_this_month else 'No unpaid fees for this student up to the selected month'
-            return Response({'error': err}, status=400)
-        total = sum(b for _, b in to_pay)
-        created = 0
-        for sf, balance in to_pay:
-            discount_amt = Decimal('0')
-            payment = FeePayment.objects.create(
-                student_fee=sf,
-                amount=sf.total_amount,
-                discount=discount_amt,
-                payment_date=payment_date,
-                payment_mode=payment_mode,
-                notes=notes,
-                created_by=request.user,
-            )
-            payment.receipt_number = f"RCP-{school.id}-{payment.id:06d}"
-            payment.save()
-            created += 1
-        return Response({
-            'message': f'Recorded payment for {created} fee(s), total ₹{total:.2f}',
-            'total_amount': float(total),
-            'fees_cleared': created,
-        }, status=status.HTTP_201_CREATED)
+        return pay_all_pending_operation(request.user, request.data)
 
     @action(detail=False, methods=['post'])
     def pay_full_year(self, request):
@@ -1006,7 +934,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         to_pay = []
         with transaction.atomic():
             for m, y in months_years:
-                if not self._is_struct_billable_for_period(struct, m, y, student):
+                if not is_struct_billable_for_period(struct, m, y, student):
                     continue
                 eff_from = getattr(student, 'charges_effective_from', None) or student.admission_date
                 if eff_from:
@@ -1063,177 +991,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def pay_all_year(self, request):
         """Pay full academic year for ALL fee types (Transport, Tuition, etc.) in one go"""
-        from datetime import date
-        import calendar
-        from django.db import transaction
-
-        school = request.user.school
-        if not school:
-            return Response({'error': 'No school'}, status=400)
-        student_id = request.data.get('student_id')
-        month = request.data.get('month')
-        year = request.data.get('year')
-        payment_date = request.data.get('payment_date')
-        payment_mode = request.data.get('payment_mode', 'Cash')
-        notes = request.data.get('notes', '') or 'Full year payment (all fee types)'
-        raw_selected_ids = request.data.get('fee_structure_ids')
-        selected_fee_structure_ids = None
-        if raw_selected_ids is not None:
-            try:
-                if isinstance(raw_selected_ids, list):
-                    selected_fee_structure_ids = [int(x) for x in raw_selected_ids]
-                elif str(raw_selected_ids).strip() == '':
-                    selected_fee_structure_ids = []
-                else:
-                    selected_fee_structure_ids = [int(x) for x in str(raw_selected_ids).split(',') if str(x).strip()]
-            except (ValueError, TypeError):
-                return Response({'error': 'fee_structure_ids must be a list of integers'}, status=400)
-        if not student_id or month is None or not year or not payment_date:
-            return Response({'error': 'student_id, month, year, payment_date required'}, status=400)
-        try:
-            payment_date = date.fromisoformat(str(payment_date))
-        except (ValueError, TypeError):
-            return Response({'error': 'Invalid payment_date'}, status=400)
-        month, year = int(month), int(year)
-        student = Student.objects.filter(school=school, id=student_id).prefetch_related('fee_structure_choices').first()
-        if not student:
-            return Response({'error': 'Student not found'}, status=404)
-
-        start_month = getattr(school, 'academic_year_start_month', 4) or 4
-        if month >= start_month:
-            start_year, end_year = year, year + 1
-        else:
-            start_year, end_year = year - 1, year
-        end_month = start_month - 1 if start_month > 1 else 12
-        months_years = []
-        if start_month > 1:
-            for m in range(start_month, 13):
-                months_years.append((m, start_year))
-            for m in range(1, end_month + 1):
-                months_years.append((m, end_year))
-        else:
-            for m in range(1, 13):
-                months_years.append((m, start_year))
-
-        academic_year_str = f'{start_year}-{str(end_year)[-2:]}'
-        structures = FeeStructure.objects.filter(
-            school=school,
-            academic_year=academic_year_str,
-        ).select_related('fee_type')
-        if student.school_class:
-            structures = structures.filter(school_class=student.school_class)
-        else:
-            structures = structures.filter(school_class__isnull=True)
-        choices = {c.fee_structure_id: c for c in student.fee_structure_choices.all()}
-        if choices:
-            structs_to_use = [s for s in structures if s.id in choices]
-        else:
-            structs_to_use = [s for s in structures if not s.fee_type.name.lower().startswith('transport') or getattr(student, 'uses_transport', True)]
-
-        if selected_fee_structure_ids is not None:
-            selected_qs = FeeStructure.objects.filter(
-                school=school,
-                id__in=selected_fee_structure_ids,
-            ).select_related('fee_type')
-            if student.school_class:
-                selected_qs = selected_qs.filter(Q(school_class=student.school_class) | Q(school_class__isnull=True))
-            else:
-                selected_qs = selected_qs.filter(school_class__isnull=True)
-            structs_to_use = list(selected_qs)
-
-        # Fallback: if no structures for this academic year, use structures from student's existing fees or class
-        if not structs_to_use:
-            existing_fee_struct_ids = StudentFee.objects.filter(
-                student_id=student_id,
-                student__school=school,
-            ).values_list('fee_structure_id', flat=True).distinct()
-            if existing_fee_struct_ids:
-                fallback_structs = list(FeeStructure.objects.filter(
-                    id__in=existing_fee_struct_ids,
-                    school=school,
-                ).select_related('fee_type'))
-            else:
-                fallback_structs = []
-            if not fallback_structs and student.school_class:
-                fallback_structs = list(FeeStructure.objects.filter(
-                    school=school,
-                    school_class=student.school_class,
-                ).select_related('fee_type').order_by('-academic_year')[:20])
-            if not fallback_structs:
-                fallback_structs = list(FeeStructure.objects.filter(
-                    school=school,
-                    school_class__isnull=True,
-                ).select_related('fee_type').order_by('-academic_year')[:20])
-            if fallback_structs and not choices:
-                fallback_structs = [s for s in fallback_structs if not s.fee_type.name.lower().startswith('transport') or getattr(student, 'uses_transport', True)]
-            structs_to_use = fallback_structs
-
-        to_pay = []
-        with transaction.atomic():
-            for struct in structs_to_use:
-                choice = choices.get(struct.id)
-                if choice and choice.effective_from:
-                    eff_y, eff_m = choice.effective_from.year, choice.effective_from.month
-                else:
-                    eff_y, eff_m = None, None
-                for m, y in months_years:
-                    if not self._is_struct_billable_for_period(struct, m, y, student, choice):
-                        continue
-                    if eff_y is not None and (y < eff_y or (y == eff_y and m < eff_m)):
-                        continue
-                    eff_from = getattr(student, 'charges_effective_from', None) or student.admission_date
-                    if eff_from:
-                        try:
-                            _, last_day = calendar.monthrange(y, m)
-                            if eff_from > date(y, m, last_day):
-                                continue
-                        except (ValueError, TypeError):
-                            pass
-                    sf, _ = StudentFee.objects.get_or_create(
-                        student_id=student_id,
-                        fee_structure_id=struct.id,
-                        month=m,
-                        year=y,
-                        defaults={
-                            'amount': struct.amount,
-                            'late_fine': 0,
-                            'total_amount': struct.amount,
-                            'due_date': date(y, m, min(struct.due_day, 28)),
-                        }
-                    )
-                    paid = sum(float(p.amount) for p in sf.payments.all())
-                    balance = float(sf.total_amount) - paid
-                    if balance > 0:
-                        discount_pct = float(struct.yearly_discount_percent or 0) / 100 if struct.allow_yearly_payment else 0
-                        to_pay.append((sf, balance, discount_pct))
-
-            if not to_pay:
-                return Response({'error': 'No unpaid fees for this student in the academic year'}, status=400)
-            total = sum(b for _, b, _ in to_pay)
-            created = 0
-            for sf, balance, discount_pct in to_pay:
-                discount_amt = Decimal(str(balance * discount_pct))
-                payment = FeePayment.objects.create(
-                    student_fee=sf,
-                    amount=sf.total_amount,
-                    discount=discount_amt,
-                    payment_date=payment_date,
-                    payment_mode=payment_mode,
-                    notes=notes,
-                    created_by=request.user,
-                )
-                payment.receipt_number = f"RCP-{school.id}-{payment.id:06d}"
-                payment.save()
-                created += 1
-        amount_after_discount = sum(
-            float(b) * (1 - dp) for _, b, dp in to_pay
-        ) if to_pay else 0
-        return Response({
-            'message': f'Recorded full year payment for {created} fee(s), all fee types',
-            'total_amount': float(total),
-            'amount_paid': float(amount_after_discount),
-            'fees_cleared': created,
-        }, status=status.HTTP_201_CREATED)
+        return pay_all_year_operation(request.user, request.data)
 
     @action(detail=True, methods=['post'])
     def add_payment(self, request, pk=None):
@@ -1332,7 +1090,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
                 if choice and choice.effective_from:
                     if year < choice.effective_from.year or (year == choice.effective_from.year and month < choice.effective_from.month):
                         continue
-                if not self._is_struct_billable_for_period(struct, month, year, student, choice):
+                if not is_struct_billable_for_period(struct, month, year, student, choice):
                     continue
                 _, was_created = StudentFee.objects.get_or_create(
                     student=student,
