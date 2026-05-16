@@ -472,3 +472,20 @@ class ExpenseReportSerializer(serializers.Serializer):
     monthly_trends = serializers.ListField()
     top_vendors = serializers.ListField()
     budget_comparison = serializers.ListField()
+
+
+class SchoolMessagingSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        from .models import SchoolMessagingSettings
+
+        model = SchoolMessagingSettings
+        fields = ["sms_enabled", "whatsapp_enabled", "updated_at"]
+        read_only_fields = ["updated_at"]
+
+
+class SendMessageSerializer(serializers.Serializer):
+    channel = serializers.ChoiceField(choices=["sms", "whatsapp"])
+    message_type = serializers.ChoiceField(choices=["payment", "result", "reminder", "custom"])
+    student_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+    custom_message = serializers.CharField(required=False, allow_blank=True, default="")
+    invoice_id = serializers.IntegerField(required=False, allow_null=True)

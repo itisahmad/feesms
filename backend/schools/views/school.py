@@ -1,0 +1,127 @@
+"""
+REST API Views for School Fee Management
+"""
+from rest_framework import viewsets, status, permissions
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.db.models import Sum, Q
+from django.utils import timezone
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth import get_user_model
+from datetime import datetime
+from decimal import Decimal
+from django.utils.encoding import force_bytes, force_str
+
+from ..models import (User, School, SchoolClass, Section, Student, FeeType, FeeStructure, 
+                     StudentFeeStructureChoice, StudentFee, FeePayment,
+                     ExpenseCategory, Vendor, Expense, Budget)
+from ..messaging import send_sms_message, send_whatsapp_message
+from ..serializers import (
+    UserSerializer, RegisterSerializer, SchoolSerializer, SchoolClassSerializer, SectionSerializer,
+    StaffUserCreateSerializer, StaffUserUpdateSerializer, ForgotPasswordSerializer, ResetPasswordSerializer,
+    StudentSerializer, FeeTypeSerializer, FeeStructureSerializer,
+    StudentFeeSerializer, StudentFeeCreateSerializer, FeePaymentSerializer,
+    ExpenseCategorySerializer, VendorSerializer, ExpenseSerializer, BudgetSerializer, ExpenseReportSerializer
+)
+from ..default_fee_types import ensure_default_fee_types_for_school
+from ..fee_periods import is_struct_billable_for_period
+from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
+from ..mixins import SchoolNestedMixin, SchoolScopedMixin
+from ..permissions import IsSchoolOwner
+from ..services.fee_collection import (
+    build_collection_summary,
+    build_dashboard_stats,
+    build_student_fee_history,
+)
+
+
+class SchoolViewSet(viewsets.ModelViewSet):
+    serializer_class = SchoolSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.school:
+            return School.objects.filter(id=self.request.user.school_id)
+        return School.objects.none()
+
+    @action(detail=True, methods=['post'])
+    def upgrade_plan(self, request, pk=None):
+        school = self.get_object()
+        user = request.user
+        if user.role != 'owner':
+            return Response({'error': 'Only school owner can change plan.'}, status=403)
+
+        plan = (request.data.get('plan') or '').strip().lower()
+        if plan not in ('basic', 'standard', 'premium'):
+            return Response({'error': 'Invalid plan. Use basic, standard, or premium.'}, status=400)
+
+        school.apply_plan(plan)
+        return Response({
+            'message': f'Plan updated to {plan}.',
+            'plan': school.plan,
+            'max_students': school.max_students,
+            'max_staff_logins': school.max_staff_logins,
+        })
+
+
+class SchoolClassViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
+    serializer_class = SchoolClassSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        school = self.get_user_school()
+        if not school:
+            return SchoolClass.objects.none()
+        return SchoolClass.objects.filter(school=school).prefetch_related('sections').order_by('display_order', 'name')
+
+    @action(detail=True, methods=['post'])
+    def add_section(self, request, pk=None):
+        school_class = self.get_object()
+        name = request.data.get('name', '').strip()
+        if not name:
+            return Response({'error': 'Section name required'}, status=status.HTTP_400_BAD_REQUEST)
+        if Section.objects.filter(school_class=school_class, name=name).exists():
+            return Response({'error': f'Section "{name}" already exists'}, status=status.HTTP_400_BAD_REQUEST)
+        order = school_class.sections.count()
+        section = Section.objects.create(school_class=school_class, name=name, display_order=order)
+        return Response(SectionSerializer(section).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def apply_fee(self, request, pk=None):
+        """Apply a fee structure to all students in this class. Central/class-wise fee assignment."""
+        from datetime import datetime
+        school_class = self.get_object()
+        school = request.user.school
+        if not school:
+            return Response({'error': 'No school'}, status=400)
+        fee_structure_id = request.data.get('fee_structure_id')
+        if not fee_structure_id:
+            return Response({'error': 'fee_structure_id required'}, status=400)
+        try:
+            fs = FeeStructure.objects.get(id=fee_structure_id, school=school, school_class=school_class)
+        except FeeStructure.DoesNotExist:
+            return Response({'error': 'Fee structure not found or does not belong to this class'}, status=400)
+        effective_from = request.data.get('effective_from')
+        eff_date = None
+        if effective_from:
+            try:
+                eff_date = datetime.strptime(effective_from, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                pass
+        students = Student.objects.filter(school=school, school_class=school_class, is_active=True)
+        created = 0
+        for student in students:
+            _, was_created = StudentFeeStructureChoice.objects.update_or_create(
+                student=student,
+                fee_structure=fs,
+                defaults={'effective_from': eff_date}
+            )
+            if was_created:
+                created += 1
+        return Response({
+            'message': f'Applied {fs.fee_type.name} to {students.count()} students in {school_class.name}',
+            'students_updated': students.count(),
+            'newly_added': created,
+        })

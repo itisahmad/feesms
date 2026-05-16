@@ -34,6 +34,7 @@ AUTH_USER_MODEL = 'schools.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -87,10 +88,9 @@ TEMPLATES = [
     },
 ]
 
-DATABASE_URL = os.getenv(
-    'DATABASE_URL',
-    'postgresql://backenddb_owner:dmDUBQlLf09p@ep-tight-mountain-a1p3x4s8-pooler.ap-southeast-1.aws.neon.tech/sms?sslmode=require&channel_binding=require'
-)
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError('DATABASE_URL environment variable is required.')
 parsed_db_url = urlparse(DATABASE_URL)
 db_query_params = parse_qs(parsed_db_url.query)
 
@@ -123,6 +123,8 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Serve from app static dirs in DEBUG without re-running collectstatic after every change.
+WHITENOISE_USE_FINDERS = DEBUG
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 

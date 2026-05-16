@@ -12,7 +12,6 @@ const nav = [
   { href: '/dashboard/fee-structure', label: 'Fee Structure', icon: '📋' },
   { href: '/dashboard/fees', label: 'Fee Collection', icon: '💰' },
   { href: '/dashboard/payments', label: 'Payments', icon: '💳' },
-  { href: '/dashboard/inventory', label: 'Inventory', icon: '📦' },
   { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
 ];
 

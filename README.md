@@ -34,6 +34,7 @@ python -m venv venv
 
 pip install -r requirements.txt
 python manage.py migrate
+python manage.py collectstatic --noinput
 python manage.py seed_fee_types
 python manage.py runserver
 ```
@@ -64,6 +65,7 @@ Create `backend/.env`:
 
 ```
 DJANGO_SECRET_KEY=your-secret-key
+DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
 DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
 ```

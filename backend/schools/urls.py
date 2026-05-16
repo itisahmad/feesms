@@ -10,6 +10,7 @@ from .views import (
 from .auth_views import SchoolTokenObtainPairView
 from .views_maintenance import maintenance_check
 from .views_booking import booking_slots, book_slot
+from .views_messaging import SchoolMessagingSettingsView, SendMessageView
 
 router = DefaultRouter()
 router.register(r'schools', SchoolViewSet, basename='school')
@@ -34,5 +35,7 @@ urlpatterns = [
     path('maintenance/', maintenance_check, name='maintenance_check'),
     path('booking/slots/', booking_slots, name='booking_slots'),
     path('booking/book/', book_slot, name='book_slot'),
+    path('messaging/settings/', SchoolMessagingSettingsView.as_view(), name='messaging_settings'),
+    path('messaging/send/', SendMessageView.as_view(), name='messaging_send'),
     path('', include(router.urls)),
 ]

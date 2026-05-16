@@ -1,10 +1,17 @@
 """
 School Fee Management Models for Bihar Market
 """
-from django.db import models
+from __future__ import annotations
+
+import calendar
+from datetime import date
+from decimal import Decimal
+
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator, MaxValueValidator
-from decimal import Decimal
+from django.db import models
+from django.db.models import Sum
+from .querysets import SchoolScopedQuerySet, StudentFeeQuerySet
 
 
 class User(AbstractUser):
@@ -46,8 +53,35 @@ class School(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    PLAN_LIMITS = {
+        "basic": {"max_students": 100, "max_staff_logins": 1},
+        "standard": {"max_students": 300, "max_staff_logins": 2},
+        "premium": {"max_students": 1_000_000, "max_staff_logins": 5},
+    }
+
+    objects = SchoolScopedQuerySet.as_manager()
+
     def __str__(self):
         return self.name
+
+    def apply_plan(self, plan: str) -> None:
+        limits = self.PLAN_LIMITS[plan]
+        self.plan = plan
+        self.max_students = limits["max_students"]
+        self.max_staff_logins = limits["max_staff_logins"]
+        self.save(update_fields=["plan", "max_students", "max_staff_logins"])
+
+    @property
+    def academic_year_start(self) -> int:
+        return self.academic_year_start_month or 4
+
+    def academic_year_label(self, month: int, year: int) -> str:
+        start_year = year if month >= self.academic_year_start else year - 1
+        return f"{start_year}-{str(start_year + 1)[-2:]}"
+
+    def month_period_end(self, month: int, year: int) -> date:
+        _, last_day = calendar.monthrange(year, month)
+        return date(year, month, last_day)
 
 
 class SchoolClass(models.Model):
@@ -111,6 +145,18 @@ class Student(models.Model):
             return f"{self.school_class.name}{'-' + sec if sec else ''}"
         return self.class_name or '-'
 
+    def charges_start_date(self) -> date | None:
+        return self.charges_effective_from or self.admission_date
+
+    def applies_to_month(self, month: int, year: int) -> bool:
+        start = self.charges_start_date()
+        if not start:
+            return True
+        try:
+            return self.school.month_period_end(month, year) >= start
+        except (ValueError, TypeError):
+            return True
+
 
 class FeeType(models.Model):
     """Types of fees: tuition, transport, books, exam, etc."""
@@ -171,6 +217,33 @@ class FeeStructure(models.Model):
     def get_class_display(self):
         return self.school_class.name if self.school_class else self.class_name or '-'
 
+    def is_billable_for_period(self, month: int, year: int, student, choice=None) -> bool:
+        start_date = None
+        if choice and choice.effective_from:
+            start_date = choice.effective_from
+        if not start_date:
+            start_date = getattr(student, "charges_effective_from", None) or student.admission_date
+        if not start_date:
+            return self.should_bill_for_month(month)
+        month_diff = (year - start_date.year) * 12 + (month - start_date.month)
+        if month_diff < 0:
+            return False
+        billing_period = self.fee_type.billing_period
+        if billing_period == "monthly":
+            return True
+        if billing_period == "quarterly":
+            return month_diff % 3 == 0
+        if billing_period == "half_yearly":
+            return month_diff % 6 == 0
+        if billing_period == "yearly":
+            return month_diff % 12 == 0
+        if billing_period == "one_time":
+            return month_diff == 0
+        return True
+
+    def due_date_for(self, month: int, year: int) -> date:
+        return date(year, month, min(self.due_day, 28))
+
 
 class StudentFeeStructureChoice(models.Model):
     """Which fee structures apply to this student - ticked = charged. effective_from for mid-session (e.g. transport started later)"""
@@ -195,12 +268,43 @@ class StudentFee(models.Model):
     due_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = StudentFeeQuerySet.as_manager()
+
     class Meta:
         unique_together = ['student', 'fee_structure', 'month', 'year']
         ordering = ['-year', '-month']
 
     def __str__(self):
         return f"{self.student.name} - {self.fee_structure.fee_type.name} ({self.month}/{self.year})"
+
+    def paid_amount(self) -> Decimal:
+        if hasattr(self, "paid_total"):
+            return Decimal(str(self.paid_total))
+        total = self.payments.aggregate(total=Sum("amount"))["total"]
+        return total or Decimal("0")
+
+    @property
+    def balance(self) -> Decimal:
+        return self.total_amount - self.paid_amount()
+
+    @property
+    def is_fully_paid(self) -> bool:
+        return self.balance <= 0
+
+    @classmethod
+    def ensure_for_period(cls, student, fee_structure, month: int, year: int) -> tuple["StudentFee", bool]:
+        return cls.objects.get_or_create(
+            student=student,
+            fee_structure=fee_structure,
+            month=month,
+            year=year,
+            defaults={
+                "amount": fee_structure.amount,
+                "late_fine": 0,
+                "total_amount": fee_structure.amount,
+                "due_date": fee_structure.due_date_for(month, year),
+            },
+        )
 
 
 class FeePayment(models.Model):
@@ -221,6 +325,13 @@ class FeePayment(models.Model):
 
     def __str__(self):
         return f"₹{self.amount} - {self.student_fee.student.name}"
+
+    def assign_receipt_number(self) -> None:
+        if self.receipt_number:
+            return
+        school_id = self.student_fee.student.school_id
+        self.receipt_number = f"RCP-{school_id}-{self.id:06d}"
+        self.save(update_fields=["receipt_number"])
 
 
 class Subscription(models.Model):
@@ -363,3 +474,75 @@ class Budget(models.Model):
         if self.planned_amount == 0:
             return 0
         return float((self.spent_amount / self.planned_amount) * 100)
+
+
+class SchoolMessagingSettings(models.Model):
+    school = models.OneToOneField(School, on_delete=models.CASCADE, related_name="messaging_settings")
+    sms_enabled = models.BooleanField(default=False)
+    whatsapp_enabled = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Messaging settings — {self.school.name}"
+
+
+class MessageLog(models.Model):
+    CHANNEL_SMS = "sms"
+    CHANNEL_WHATSAPP = "whatsapp"
+    CHANNEL_CHOICES = [(CHANNEL_SMS, "SMS"), (CHANNEL_WHATSAPP, "WhatsApp")]
+
+    TYPE_PAYMENT = "payment"
+    TYPE_RESULT = "result"
+    TYPE_REMINDER = "reminder"
+    TYPE_CUSTOM = "custom"
+    TYPE_CHOICES = [
+        (TYPE_PAYMENT, "Payment"),
+        (TYPE_RESULT, "Result"),
+        (TYPE_REMINDER, "Reminder"),
+        (TYPE_CUSTOM, "Custom"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_SENT = "sent"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_SENT, "Sent"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="message_logs")
+    student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True, related_name="message_logs")
+    phone_number = models.CharField(max_length=32)
+    channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES)
+    message_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    content = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    provider_response = models.JSONField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class MessageUsage(models.Model):
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="message_usage_batches")
+    channel = models.CharField(max_length=20, choices=MessageLog.CHANNEL_CHOICES)
+    message_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class FeeAutomatedReminderLog(models.Model):
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="fee_automated_reminder_logs")
+    run_date = models.DateField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-run_date", "school_id"]
+        constraints = [
+            models.UniqueConstraint(fields=["school", "run_date"], name="uniq_fee_auto_reminder_school_date"),
+        ]
