@@ -333,11 +333,25 @@ class FeeCollectionCreateOrderView(APIView):
         student_id = int(student_id)
         only_this_month = collection_mode == "monthly"
 
+        adjustment_data = {
+            k: request.data.get(k)
+            for k in ("adjustment_type", "adjustment_amount", "adjustment_notes")
+            if request.data.get(k) not in (None, "")
+        }
+
         if collection_mode == "yearly":
-            amount, err = compute_razorpay_amount_pay_all_year(school, student_id, month, year, selected_fee_structure_ids)
+            amount, err = compute_razorpay_amount_pay_all_year(
+                school, student_id, month, year, selected_fee_structure_ids, adjustment_data=adjustment_data or None
+            )
         else:
             amount, err = compute_razorpay_amount_pay_all_pending(
-                school, student_id, month, year, only_this_month, selected_fee_structure_ids
+                school,
+                student_id,
+                month,
+                year,
+                only_this_month,
+                selected_fee_structure_ids,
+                adjustment_data=adjustment_data or None,
             )
 
         if err:
@@ -367,6 +381,7 @@ class FeeCollectionCreateOrderView(APIView):
             "fee_structure_ids": selected_fee_structure_ids,
             "notes_base": notes_base,
         }
+        payload.update(adjustment_data)
 
         receipt = f"fc{uuid.uuid4().hex}"[:40]
         try:
@@ -458,6 +473,9 @@ class FeeCollectionVerifyView(APIView):
                     "transaction_id": payment_id,
                     "notes": "",
                 }
+                for key in ("adjustment_type", "adjustment_amount", "adjustment_notes"):
+                    if payload.get(key) not in (None, ""):
+                        data[key] = payload[key]
                 if session.collection_mode == "yearly":
                     resp = pay_all_year_operation(request.user, data, payment_mode="Online", notes_override=notes)
                 else:

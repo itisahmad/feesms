@@ -22,6 +22,15 @@ import { InlineLoading } from '@/components/dashboard/loading-state';
 import { DashboardModal } from '@/components/dashboard/modal';
 import { Button } from '@/components/ui/button';
 import { dash } from '@/lib/dashboard-ui';
+import {
+  adjustmentHasAmount,
+  buildAdjustmentPayload,
+  computeTotalWithAdjustment,
+  getPreviewBaseTotal,
+  isFeeStructurePaid,
+  sameFeeStructureIdList,
+  type PaymentPreview,
+} from '@/lib/fee-payment';
 import { cn } from '@/lib/utils';
 
 declare global {
@@ -108,9 +117,12 @@ export default function ClassFeesPage() {
   const [payAllStudent, setPayAllStudent] = useState<StudentSummary | null>(null);
   const [payMode, setPayMode] = useState<'monthly' | 'yearly' | 'all_pending'>('monthly');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
-  const [paymentPreview, setPaymentPreview] = useState<{ monthly: { amount: number; breakdown: { fee_type: string; month?: number; year?: number; balance: number }[] }; yearly: { amount: number; amount_before_discount?: number; breakdown: { fee_type: string; month?: number; year?: number; balance: number; after_discount?: number; discount_percent?: number }[] } } | null>(null);
+  const [paymentPreview, setPaymentPreview] = useState<PaymentPreview | null>(null);
   const [classFeeOptions, setClassFeeOptions] = useState<{ id: number; fee_type_name: string; amount: string; billing_period_display?: string; academic_year?: string }[]>([]);
   const [selectedFeeStructureIds, setSelectedFeeStructureIds] = useState<number[]>([]);
+  const [adjustmentType, setAdjustmentType] = useState<'' | 'add' | 'subtract'>('');
+  const [adjustmentAmount, setAdjustmentAmount] = useState('');
+  const [adjustmentNotes, setAdjustmentNotes] = useState('');
   const [expandedFeeType, setExpandedFeeType] = useState<string | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
@@ -118,6 +130,7 @@ export default function ClassFeesPage() {
     payment_mode: 'Cash',
     notes: '',
   });
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
@@ -125,6 +138,9 @@ export default function ClassFeesPage() {
   const closePayModal = () => {
     setPayAllStudent(null);
     setPayMode('monthly');
+    setAdjustmentType('');
+    setAdjustmentAmount('');
+    setAdjustmentNotes('');
   };
 
   const loadRazorpayScript = () =>
@@ -154,7 +170,6 @@ export default function ClassFeesPage() {
 
   useEffect(() => {
     if (payAllStudent) {
-      setPaymentPreview(null);
       if (payAllStudent.school_class_id) {
         getFeeStructures(payAllStudent.school_class_id)
           .then(({ data }) => {
@@ -189,21 +204,52 @@ export default function ClassFeesPage() {
   }, [payAllStudent?.student_id, month, year]);
 
   useEffect(() => {
-    if (payAllStudent) {
+    if (!payAllStudent) {
       setPaymentPreview(null);
-      getPaymentPreview(
-        payAllStudent.student_id,
-        month,
-        year,
-        payMode === 'all_pending' ? undefined : selectedFeeStructureIds,
-      )
-        .then(({ data }) => setPaymentPreview(data))
-        .catch(() => setPaymentPreview(null));
-    } else {
-      setPaymentPreview(null);
+      setPreviewLoading(false);
       setExpandedFeeType(null);
+      return;
     }
+
+    let cancelled = false;
+    setPreviewLoading(true);
+
+    getPaymentPreview(
+      payAllStudent.student_id,
+      month,
+      year,
+      payMode === 'all_pending' ? undefined : selectedFeeStructureIds,
+    )
+      .then(({ data }) => {
+        if (cancelled) return;
+        setPaymentPreview(data);
+        if (payMode === 'monthly' && data.payable_fee_structure_ids?.length) {
+          const payable = data.payable_fee_structure_ids as number[];
+          setSelectedFeeStructureIds((prev) => {
+            const next = prev.filter((id) => payable.includes(id));
+            return sameFeeStructureIdList(prev, next) ? prev : next;
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [payAllStudent?.student_id, month, year, payMode, selectedFeeStructureIds]);
+
+  const paidFeeStructureIds =
+    payMode === 'monthly' ? paymentPreview?.paid_fee_structure_ids : undefined;
+
+  const basePayAmount = payAllStudent
+    ? getPreviewBaseTotal(paymentPreview, payMode, payAllStudent.total_pending)
+    : 0;
+  const displayPayAmount = computeTotalWithAdjustment(basePayAmount, adjustmentType, adjustmentAmount);
 
   const handleGenerateFees = async () => {
     setGenerating(true);
@@ -224,8 +270,13 @@ export default function ClassFeesPage() {
   const handlePayAll = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payAllStudent) return;
+    if (adjustmentHasAmount(adjustmentType, adjustmentAmount) && !adjustmentNotes.trim()) {
+      alert('Notes are required when using a payment adjustment');
+      return;
+    }
     setSaving(true);
     try {
+      const adjustmentPayload = buildAdjustmentPayload(adjustmentType, adjustmentAmount, adjustmentNotes);
       const executePayment = async (mode: string, transactionId?: string) => {
         const baseNotes =
           paymentForm.notes ||
@@ -243,6 +294,7 @@ export default function ClassFeesPage() {
             payment_mode: mode,
             notes,
             fee_structure_ids: selectedFeeStructureIds,
+            ...adjustmentPayload,
           });
         } else if (payMode === 'all_pending') {
           await payAllPending({
@@ -253,6 +305,7 @@ export default function ClassFeesPage() {
             payment_mode: mode,
             notes,
             only_this_month: false,
+            ...adjustmentPayload,
           });
         } else {
           await payAllPending({
@@ -264,6 +317,7 @@ export default function ClassFeesPage() {
             notes,
             only_this_month: true,
             fee_structure_ids: selectedFeeStructureIds,
+            ...adjustmentPayload,
           });
         }
       };
@@ -289,6 +343,7 @@ export default function ClassFeesPage() {
           collection_mode,
           fee_structure_ids: payMode === 'all_pending' ? undefined : selectedFeeStructureIds,
           notes: paymentForm.notes || undefined,
+          ...adjustmentPayload,
         });
 
         await new Promise<void>((resolve, reject) => {
@@ -795,21 +850,31 @@ export default function ClassFeesPage() {
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Fee types for this payment</div>
               <div className="max-h-40 space-y-2 overflow-y-auto">
                 {classFeeOptions.map((f) => {
-                  const checked = selectedFeeStructureIds.includes(f.id);
+                  const isPaid = isFeeStructurePaid(f.id, paidFeeStructureIds);
+                  const checked = isPaid || selectedFeeStructureIds.includes(f.id);
                   return (
-                    <label key={f.id} className="flex cursor-pointer items-center justify-between gap-3 text-sm text-slate-300">
+                    <label
+                      key={f.id}
+                      className={cn(
+                        'flex items-center justify-between gap-3 text-sm',
+                        isPaid ? 'cursor-default text-slate-500' : 'cursor-pointer text-slate-300'
+                      )}
+                    >
                       <span>
                         {f.fee_type_name} {f.billing_period_display ? `(${f.billing_period_display})` : ''}
+                        {isPaid && <span className="ml-2 text-xs font-medium text-emerald-400/90">Paid</span>}
                       </span>
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() =>
+                        disabled={isPaid}
+                        onChange={() => {
+                          if (isPaid) return;
                           setSelectedFeeStructureIds((prev) =>
                             checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
-                          )
-                        }
-                        className="rounded border-white/20 bg-white/10 accent-teal-500"
+                          );
+                        }}
+                        className="rounded border-white/20 bg-white/10 accent-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                     </label>
                   );
@@ -836,8 +901,10 @@ export default function ClassFeesPage() {
                       </div>
                     ))
                 )
-              ) : !paymentPreview ? (
+              ) : previewLoading && !paymentPreview ? (
                 <span className="text-slate-500">Loading...</span>
+              ) : !paymentPreview ? (
+                <span className="text-slate-500">No preview available</span>
               ) : payMode === 'monthly' ? (
                 paymentPreview.monthly.breakdown.length === 0 ? (
                   <span className="text-teal-400">No fees for {MONTHS[month]} {year}</span>
@@ -961,8 +1028,73 @@ export default function ClassFeesPage() {
                   </>
                 )
               ) : null}
+              {adjustmentHasAmount(adjustmentType, adjustmentAmount) && (
+                <div className="flex justify-between text-sm text-slate-400">
+                  <span>
+                    Adjustment ({adjustmentType === 'add' ? '+' : '−'}₹{parseFloat(adjustmentAmount).toLocaleString('en-IN')})
+                  </span>
+                  <span className={adjustmentType === 'add' ? 'text-emerald-400' : 'text-rose-400'}>
+                    {adjustmentType === 'add' ? '+' : '−'}₹{parseFloat(adjustmentAmount).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              )}
+              {(paymentPreview || payMode === 'all_pending') && (
+                <div className="flex justify-between border-t border-teal-500/20 pt-2 text-base font-bold text-teal-200">
+                  <span>Amount to pay</span>
+                  <span>₹{displayPayAmount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
             </div>
           </div>
+          <motion.div className={cn(dash.innerPanel, 'mb-4')}>
+            <motion.div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Adjustment (optional)</motion.div>
+            <motion.div className="space-y-3">
+              <select
+                value={adjustmentType}
+                onChange={(e) => {
+                  const v = e.target.value as '' | 'add' | 'subtract';
+                  setAdjustmentType(v);
+                  if (!v) {
+                    setAdjustmentAmount('');
+                    setAdjustmentNotes('');
+                  }
+                }}
+                className={dash.field}
+              >
+                <option value="">No adjustment</option>
+                <option value="add">Add to total (+)</option>
+                <option value="subtract">Subtract from total (−)</option>
+              </select>
+              {adjustmentType && (
+                <>
+                  <motion.div>
+                    <label className={dash.label}>Adjustment amount (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={adjustmentAmount}
+                      onChange={(e) => setAdjustmentAmount(e.target.value)}
+                      className={dash.field}
+                      placeholder="0"
+                    />
+                  </motion.div>
+                  <motion.div>
+                    <label className={dash.label}>
+                      Adjustment notes {adjustmentHasAmount(adjustmentType, adjustmentAmount) ? '(required)' : ''}
+                    </label>
+                    <input
+                      value={adjustmentNotes}
+                      onChange={(e) => setAdjustmentNotes(e.target.value)}
+                      className={dash.field}
+                      placeholder="Reason for adjustment"
+                      required={adjustmentHasAmount(adjustmentType, adjustmentAmount)}
+                    />
+                  </motion.div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
           <form onSubmit={handlePayAll} className="space-y-4">
             <div>
               <label className={dash.label}>Date</label>
@@ -996,18 +1128,14 @@ export default function ClassFeesPage() {
             <div className="flex flex-wrap gap-2 pt-2">
               <Button
                 type="submit"
-                disabled={saving || (payMode !== 'all_pending' && !paymentPreview)}
+                disabled={saving || (payMode !== 'all_pending' && (previewLoading && !paymentPreview))}
                 className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/25 hover:from-teal-400 hover:to-cyan-400 disabled:opacity-50"
               >
                 {saving
                   ? 'Processing...'
-                  : payMode === 'all_pending'
-                    ? `Pay ₹${payAllStudent.total_pending.toLocaleString('en-IN')}`
-                    : paymentPreview
-                      ? payMode === 'yearly'
-                        ? `Pay ₹${paymentPreview.yearly.amount.toLocaleString('en-IN')}`
-                        : `Pay ₹${paymentPreview.monthly.amount.toLocaleString('en-IN')}`
-                      : 'Loading...'}
+                  : payMode === 'all_pending' || paymentPreview
+                    ? `Pay ₹${displayPayAmount.toLocaleString('en-IN')}`
+                    : 'Loading...'}
               </Button>
               <Button
                 type="button"

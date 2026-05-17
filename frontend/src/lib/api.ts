@@ -142,6 +142,12 @@ export const payFullYear = (data: {
   payment_mode?: string;
   notes?: string;
 }) => api.post('/student-fees/pay_full_year/', data);
+export type FeePaymentAdjustment = {
+  adjustment_type?: 'add' | 'subtract';
+  adjustment_amount?: number;
+  adjustment_notes?: string;
+};
+
 export const payAllPending = (data: {
   student_id: number;
   month: number;
@@ -151,7 +157,7 @@ export const payAllPending = (data: {
   notes?: string;
   only_this_month?: boolean;
   fee_structure_ids?: number[];
-}) => api.post('/student-fees/pay_all_pending/', data);
+} & FeePaymentAdjustment) => api.post('/student-fees/pay_all_pending/', data);
 export const payAllYear = (data: {
   student_id: number;
   month: number;
@@ -160,7 +166,7 @@ export const payAllYear = (data: {
   payment_mode?: string;
   notes?: string;
   fee_structure_ids?: number[];
-}) => api.post('/student-fees/pay_all_year/', data);
+} & FeePaymentAdjustment) => api.post('/student-fees/pay_all_year/', data);
 export const getPaymentPreview = (studentId: number, month: number, year: number, feeStructureIds?: number[]) =>
   api.get('/student-fees/payment_preview/', {
     params: {
@@ -236,7 +242,7 @@ export const createFeeCollectionOrder = (data: {
   collection_mode: 'monthly' | 'yearly' | 'all_pending';
   fee_structure_ids?: number[];
   notes?: string;
-}) => api.post('/payments/fee-collection/create-order/', data);
+} & FeePaymentAdjustment) => api.post('/payments/fee-collection/create-order/', data);
 
 export const verifyFeeCollectionPayment = (data: {
   checkout_session_id: number;

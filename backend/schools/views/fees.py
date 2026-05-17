@@ -27,7 +27,12 @@ from ..serializers import (
 )
 from ..default_fee_types import ensure_default_fee_types_for_school
 from ..fee_periods import is_struct_billable_for_period
-from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
+from ..bulk_fee_collection import (
+    get_paid_fee_structure_ids_for_monthly,
+    get_payable_fee_structure_ids_for_monthly,
+    pay_all_pending_operation,
+    pay_all_year_operation,
+)
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
 from ..permissions import IsSchoolOwner
 from ..services.fee_collection import (
@@ -268,6 +273,13 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
                     yearly_total += after_discount
                     yearly_total_before_discount += balance
 
+        payable_fee_structure_ids = get_payable_fee_structure_ids_for_monthly(
+            student, school, month, year, structs_to_use
+        )
+        paid_fee_structure_ids = get_paid_fee_structure_ids_for_monthly(
+            student, school, month, year, structs_to_use
+        )
+
         return Response({
             'monthly': {'amount': round(monthly_total, 2), 'breakdown': monthly_breakdown},
             'yearly': {
@@ -275,6 +287,8 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
                 'amount_before_discount': round(yearly_total_before_discount, 2),
                 'breakdown': yearly_breakdown,
             },
+            'payable_fee_structure_ids': payable_fee_structure_ids,
+            'paid_fee_structure_ids': paid_fee_structure_ids,
         })
 
     @action(detail=False, methods=['post'])

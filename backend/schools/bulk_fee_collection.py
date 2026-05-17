@@ -16,6 +16,115 @@ from .fee_periods import is_struct_billable_for_period
 from .models import FeePayment, FeeStructure, Student, StudentFee
 
 
+def _student_fee_balance(sf: StudentFee) -> float:
+    paid = sum(float(p.amount) for p in sf.payments.all())
+    return float(sf.total_amount) - paid
+
+
+def parse_payment_adjustment(data):
+    """
+    Returns (adjustment_type, adjustment_amount, adjustment_notes, error_response).
+    adjustment_type is None when no adjustment is applied.
+    """
+    adj_type = (data.get("adjustment_type") or "").strip().lower()
+    raw_amount = data.get("adjustment_amount")
+    adj_notes = (data.get("adjustment_notes") or "").strip()
+
+    if not adj_type and (raw_amount is None or str(raw_amount).strip() == ""):
+        return None, Decimal("0"), "", None
+
+    try:
+        amount = Decimal(str(raw_amount or 0))
+    except Exception:
+        return None, Decimal("0"), "", Response({"error": "Invalid adjustment_amount"}, status=400)
+
+    if amount <= 0:
+        return None, Decimal("0"), "", None
+
+    if adj_type not in ("add", "subtract"):
+        return None, Decimal("0"), "", Response({"error": "adjustment_type must be add or subtract"}, status=400)
+
+    if not adj_notes:
+        return None, Decimal("0"), "", Response(
+            {"error": "adjustment_notes is required when using a payment adjustment"},
+            status=400,
+        )
+
+    return adj_type, amount, adj_notes, None
+
+
+def compute_total_with_adjustment(base: Decimal, adj_type, adj_amount: Decimal) -> Decimal:
+    if not adj_type or adj_amount <= 0:
+        return base
+    if adj_type == "subtract":
+        result = base - adj_amount
+        return result if result > 0 else Decimal("0")
+    return base + adj_amount
+
+
+def append_adjustment_to_notes(notes: str, adj_type: str, adj_amount: Decimal, adj_notes: str) -> str:
+    sign = "+" if adj_type == "add" else "-"
+    fragment = f"Adjustment {sign}₹{adj_amount}: {adj_notes}"
+    base = (notes or "").strip()
+    return f"{base} | {fragment}" if base else fragment
+
+
+def fee_structure_selectable_for_monthly_payment(student, fee_structure, month: int, year: int) -> bool:
+    """
+    Whether a fee type should appear in the monthly payment picker for (month, year).
+    One-time fees already paid in a prior month are hidden for the current month.
+    """
+    billing = fee_structure.fee_type.billing_period
+    fees = StudentFee.objects.filter(
+        student_id=student.id,
+        fee_structure_id=fee_structure.id,
+    ).prefetch_related("payments")
+
+    if billing == "one_time":
+        for sf in fees:
+            if _student_fee_balance(sf) > 0.01:
+                sf_curr = fees.filter(month=month, year=year).first()
+                if sf_curr and _student_fee_balance(sf_curr) > 0.01:
+                    return True
+                return False
+        return False
+
+    sf_curr = fees.filter(month=month, year=year).first()
+    if not sf_curr:
+        return False
+    return _student_fee_balance(sf_curr) > 0.01
+
+
+def fee_structure_is_paid_for_monthly_display(student, fee_structure, month: int, year: int) -> bool:
+    """Fully paid fee types shown checked+disabled in the monthly payment picker."""
+    fees = StudentFee.objects.filter(
+        student_id=student.id,
+        fee_structure_id=fee_structure.id,
+    ).prefetch_related("payments")
+    billing = fee_structure.fee_type.billing_period
+
+    if billing == "one_time":
+        for sf in fees:
+            paid_amt = sum(float(p.amount) for p in sf.payments.all())
+            if paid_amt > 0 and _student_fee_balance(sf) <= 0.01:
+                return True
+        return False
+
+    sf_curr = fees.filter(month=month, year=year).first()
+    if not sf_curr:
+        return False
+    paid_amt = sum(float(p.amount) for p in sf.payments.all())
+    return paid_amt > 0 and _student_fee_balance(sf_curr) <= 0.01
+
+
+def get_payable_fee_structure_ids_for_monthly(student, school, month: int, year: int, structures) -> list[int]:
+    return [s.id for s in structures if fee_structure_selectable_for_monthly_payment(student, s, month, year)]
+
+
+def get_paid_fee_structure_ids_for_monthly(student, school, month: int, year: int, structures) -> list[int]:
+    return [s.id for s in structures if fee_structure_is_paid_for_monthly_display(student, s, month, year)]
+
+
 def parse_fee_structure_ids(raw_selected_ids):
     """Returns (list|None, error_response_or_None). None list means no filter (all structures)."""
     if raw_selected_ids is None:
@@ -45,6 +154,12 @@ def pay_all_pending_operation(user, data, payment_mode=None, notes_override=None
     payment_date = data.get("payment_date")
     payment_mode = payment_mode or data.get("payment_mode", "Cash")
     notes = notes_override if notes_override is not None else (data.get("notes", "") or "All pending payment")
+
+    adj_type, adj_amount, adj_notes, adj_err = parse_payment_adjustment(data)
+    if adj_err:
+        return adj_err
+    if adj_type:
+        notes = append_adjustment_to_notes(notes, adj_type, adj_amount, adj_notes)
 
     selected_fee_structure_ids, perr = parse_fee_structure_ids(data.get("fee_structure_ids"))
     if perr:
@@ -92,15 +207,24 @@ def pay_all_pending_operation(user, data, payment_mode=None, notes_override=None
         )
         return Response({"error": err}, status=400)
 
-    total = sum(b for _, b in to_pay)
+    base_total = Decimal(str(sum(b for _, b in to_pay)))
+    total = compute_total_with_adjustment(base_total, adj_type, adj_amount)
+    delta = total - base_total
     created = 0
     transaction_id = (data.get("transaction_id") or "").strip() or None
 
-    for sf, _balance in to_pay:
+    payment_rows = [(sf, Decimal(str(balance))) for sf, balance in to_pay]
+    if delta != 0 and payment_rows:
+        last_sf, last_amt = payment_rows[-1]
+        payment_rows[-1] = (last_sf, last_amt + delta)
+
+    for sf, pay_amount in payment_rows:
+        if pay_amount <= 0:
+            continue
         discount_amt = Decimal("0")
         payment = FeePayment.objects.create(
             student_fee=sf,
-            amount=sf.total_amount,
+            amount=pay_amount,
             discount=discount_amt,
             payment_date=payment_date,
             payment_mode=payment_mode,
@@ -114,15 +238,18 @@ def pay_all_pending_operation(user, data, payment_mode=None, notes_override=None
 
     return Response(
         {
-            "message": f"Recorded payment for {created} fee(s), total ₹{total:.2f}",
+            "message": f"Recorded payment for {created} fee(s), total ₹{float(total):.2f}",
             "total_amount": float(total),
+            "base_amount": float(base_total),
             "fees_cleared": created,
         },
         status=status.HTTP_201_CREATED,
     )
 
 
-def compute_razorpay_amount_pay_all_pending(school, student_id, month, year, only_this_month, selected_fee_structure_ids):
+def compute_razorpay_amount_pay_all_pending(
+    school, student_id, month, year, only_this_month, selected_fee_structure_ids, adjustment_data=None
+):
     """Return (amount_inr: Decimal, error: str|None)."""
     student = Student.objects.filter(school=school, id=student_id).first()
     if not student:
@@ -144,8 +271,7 @@ def compute_razorpay_amount_pay_all_pending(school, student_id, month, year, onl
 
     total = Decimal("0")
     for sf in student_fees:
-        paid = sum(float(p.amount) for p in sf.payments.all())
-        balance = float(sf.total_amount) - paid
+        balance = _student_fee_balance(sf)
         if balance > 0:
             total += Decimal(str(balance))
 
@@ -156,7 +282,16 @@ def compute_razorpay_amount_pay_all_pending(school, student_id, month, year, onl
             else "No unpaid fees for this student up to the selected month"
         )
         return None, err
+
+    if adjustment_data:
+        adj_type, adj_amount, _, adj_err = parse_payment_adjustment(adjustment_data)
+        if adj_err:
+            err_msg = adj_err.data.get("error", "Invalid adjustment") if hasattr(adj_err, "data") else "Invalid adjustment"
+            return None, err_msg
+        total = compute_total_with_adjustment(total, adj_type, adj_amount)
+
     return total, None
+
 
 
 def pay_all_year_operation(user, data, payment_mode=None, notes_override=None):
@@ -171,6 +306,12 @@ def pay_all_year_operation(user, data, payment_mode=None, notes_override=None):
     payment_date = data.get("payment_date")
     payment_mode = payment_mode or data.get("payment_mode", "Cash")
     notes = notes_override if notes_override is not None else (data.get("notes", "") or "Full year payment (all fee types)")
+
+    adj_type, adj_amount, adj_notes, adj_err = parse_payment_adjustment(data)
+    if adj_err:
+        return adj_err
+    if adj_type:
+        notes = append_adjustment_to_notes(notes, adj_type, adj_amount, adj_notes)
 
     selected_fee_structure_ids, perr = parse_fee_structure_ids(data.get("fee_structure_ids"))
     if perr:
@@ -302,14 +443,25 @@ def pay_all_year_operation(user, data, payment_mode=None, notes_override=None):
         if not to_pay:
             return Response({"error": "No unpaid fees for this student in the academic year"}, status=400)
 
-        total = sum(b for _, b, _ in to_pay)
+        base_paid = Decimal(str(sum(float(b) * (1 - dp) for _, b, dp in to_pay)))
+        total_paid = compute_total_with_adjustment(base_paid, adj_type, adj_amount)
+        delta = total_paid - base_paid
         created = 0
         transaction_id = (data.get("transaction_id") or "").strip() or None
+        payment_rows = []
         for sf, balance, discount_pct in to_pay:
-            discount_amt = Decimal(str(balance * discount_pct))
+            pay_amt = Decimal(str(float(balance) * (1 - discount_pct)))
+            payment_rows.append((sf, pay_amt, discount_pct))
+        if delta != 0 and payment_rows:
+            last_sf, last_amt, last_dp = payment_rows[-1]
+            payment_rows[-1] = (last_sf, last_amt + delta, last_dp)
+        for sf, pay_amount, discount_pct in payment_rows:
+            if pay_amount <= 0:
+                continue
+            discount_amt = Decimal(str(float(sf.total_amount) * discount_pct)) if discount_pct else Decimal("0")
             payment = FeePayment.objects.create(
                 student_fee=sf,
-                amount=sf.total_amount,
+                amount=pay_amount,
                 discount=discount_amt,
                 payment_date=payment_date,
                 payment_mode=payment_mode,
@@ -321,19 +473,21 @@ def pay_all_year_operation(user, data, payment_mode=None, notes_override=None):
             payment.save()
             created += 1
 
-    amount_after_discount = sum(float(b) * (1 - dp) for _, b, dp in to_pay) if to_pay else 0
     return Response(
         {
             "message": f"Recorded full year payment for {created} fee(s), all fee types",
-            "total_amount": float(total),
-            "amount_paid": float(amount_after_discount),
+            "total_amount": float(sum(b for _, b, _ in to_pay)),
+            "amount_paid": float(total_paid),
+            "base_amount": float(base_paid),
             "fees_cleared": created,
         },
         status=status.HTTP_201_CREATED,
     )
 
 
-def compute_razorpay_amount_pay_all_year(school, student_id, month, year, selected_fee_structure_ids):
+def compute_razorpay_amount_pay_all_year(
+    school, student_id, month, year, selected_fee_structure_ids, adjustment_data=None
+):
     """
     Amount the parent pays via Razorpay for full-year checkout (after discounts).
     Returns (amount_inr: Decimal, error: str|None).
@@ -457,4 +611,10 @@ def compute_razorpay_amount_pay_all_year(school, student_id, month, year, select
         return None, "No unpaid fees for this student in the academic year"
 
     amount_after_discount = sum(Decimal(str(b)) * (Decimal("1") - Decimal(str(dp))) for _, b, dp in to_pay)
+    if adjustment_data:
+        adj_type, adj_amount, _, adj_err = parse_payment_adjustment(adjustment_data)
+        if adj_err:
+            err_msg = adj_err.data.get("error", "Invalid adjustment") if hasattr(adj_err, "data") else "Invalid adjustment"
+            return None, err_msg
+        amount_after_discount = compute_total_with_adjustment(amount_after_discount, adj_type, adj_amount)
     return amount_after_discount, None
