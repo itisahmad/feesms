@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { Wallet, Layers, CalendarDays } from 'lucide-react';
 import {
   getCollectionSummary,
   getReceipt,
@@ -14,6 +16,13 @@ import {
   createFeeCollectionOrder,
   verifyFeeCollectionPayment,
 } from '@/lib/api';
+import { PageHeader } from '@/components/dashboard/page-header';
+import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
+import { InlineLoading } from '@/components/dashboard/loading-state';
+import { DashboardModal } from '@/components/dashboard/modal';
+import { Button } from '@/components/ui/button';
+import { dash } from '@/lib/dashboard-ui';
+import { cn } from '@/lib/utils';
 
 declare global {
   interface Window {
@@ -97,6 +106,11 @@ export default function FeesPage() {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
+
+  const closePayModal = () => {
+    setPayAllStudent(null);
+    setPayMode('monthly');
+  };
 
   const loadRazorpayScript = () =>
     new Promise<boolean>((resolve) => {
@@ -379,509 +393,597 @@ export default function FeesPage() {
   }, [month, firstAvailableMonth]);
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-800">Fee Collection</h1>
-        <p className="text-gray-600 mt-1">
-          Track which students have paid, which have pending dues, and class-wise payment status. Includes unpaid from previous months. Tuition, transport, and other fees are tracked separately per student.
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        icon={Wallet}
+        eyebrow={`Collection workspace · ${MONTHS[month]} ${year}`}
+        title="Fee"
+        highlight="Collection"
+        subtitle="Track which students have paid, which have pending dues, and class-wise payment status. Includes unpaid from previous months. Tuition, transport, and other fees are tracked separately per student."
+      />
 
-      <div className="flex gap-4 mb-6 items-center flex-wrap">
-        <div className="px-4 py-2 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-sm font-medium">
-          Current month ({MONTHS[currentMonth]} {currentYear})
+      <GlassCard delay={0.05}>
+        <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-5 py-4">
+          <div className={cn(dash.sectionChip, 'flex items-center gap-1.5 px-3 py-2 font-medium')}>
+            <CalendarDays className="h-3.5 w-3.5" />
+            Current month ({MONTHS[currentMonth]} {currentYear})
+          </div>
+          <select
+            value={month}
+            onChange={(e) => setMonth(parseInt(e.target.value, 10))}
+            className={dash.fieldSm}
+            aria-label="Reporting month"
+          >
+            {availableMonths.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label} {currentYear}
+              </option>
+            ))}
+          </select>
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            className={cn(dash.fieldSm, 'flex min-w-[140px] items-center')}
+            aria-label="Filter by class"
+          >
+            <option value="">All classes</option>
+            {data?.class_wise.map((c) => (
+              <option key={c.class_name} value={c.class_name}>
+                {c.class_name}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={handleGenerateFees}
+            disabled={generating || !canGenerateFees}
+            title={!canGenerateFees ? 'Generate fees is not allowed for past months' : undefined}
+            className="rounded-xl bg-amber-500 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-600 disabled:opacity-50 border-0"
+          >
+            {generating ? 'Generating…' : 'Generate fees'}
+          </Button>
+          {!canGenerateFees && (
+            <span className="text-xs text-slate-500 md:max-w-xs">
+              Viewing {MONTHS[month]} {year}. Generate fees only for the current month.
+            </span>
+          )}
+          <div className="ml-auto flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setView('summary')}
+              className={cn('px-4 py-2 text-sm font-medium transition', view === 'summary' ? dash.tabActive : dash.tabInactive)}
+            >
+              By Class
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('students')}
+              className={cn('px-4 py-2 text-sm font-medium transition', view === 'students' ? dash.tabActive : dash.tabInactive)}
+            >
+              By Student
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('defaulters')}
+              className={cn('px-4 py-2 text-sm font-medium transition', view === 'defaulters' ? dash.tabActive : dash.tabInactive)}
+            >
+              Defaulters ({defaulters.length})
+            </button>
+          </div>
         </div>
-        <select
-          value={month}
-          onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-          className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-        >
-          {availableMonths.map(({ value, label }) => (
-            <option key={value} value={value}>{label} {currentYear}</option>
-          ))}
-        </select>
-        <select
-          value={classFilter}
-          onChange={(e) => setClassFilter(e.target.value)}
-          className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-        >
-          <option value="">All classes</option>
-          {data?.class_wise.map((c) => (
-            <option key={c.class_name} value={c.class_name}>{c.class_name}</option>
-          ))}
-        </select>
-        <button
-          onClick={handleGenerateFees}
-          disabled={generating || !canGenerateFees}
-          title={!canGenerateFees ? 'Generate fees is not allowed for past months' : undefined}
-          className="px-6 py-2.5 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 disabled:opacity-50"
-        >
-          {generating ? 'Generating...' : 'Generate fees'}
-        </button>
-        {!canGenerateFees && (
-          <span className="text-sm text-gray-500">
-            Viewing {MONTHS[month]} {year}. Generate fees only for current or future months.
-          </span>
-        )}
-        <div className="flex gap-2 ml-auto">
-          <button
-            onClick={() => setView('summary')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${view === 'summary' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700'}`}
-          >
-            By Class
-          </button>
-          <button
-            onClick={() => setView('students')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${view === 'students' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700'}`}
-          >
-            By Student
-          </button>
-          <button
-            onClick={() => setView('defaulters')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${view === 'defaulters' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Defaulters ({defaulters.length})
-          </button>
-        </div>
-      </div>
+      </GlassCard>
 
       {generateSuccess && (
-        <div className="mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={dash.success}
+          role="status"
+        >
           {generateSuccess}
-        </div>
+        </motion.div>
       )}
 
-      {loading ? (
-        <div className="p-12 text-center text-gray-500">Loading...</div>
-      ) : !data ? (
-        <div className="p-12 text-center text-gray-500">Failed to load data.</div>
-      ) : data.student_wise.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-100 p-12 text-center text-gray-500">
-          No fee records up to {MONTHS[month]} {year}. Click &quot;Generate fees&quot; to create fee records for all students.
-        </div>
-      ) : (
-        <>
-          {view === 'summary' && (
-            <div className="space-y-6">
-              <h2 className="text-lg font-semibold text-gray-800">Class-wise payment summary</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {(classFilter ? data.class_wise.filter((c) => c.class_name.startsWith(classFilter)) : data.class_wise).map((c) => (
-                  <Link
-                    key={c.class_name}
-                    href={`/dashboard/fees/class/${encodeURIComponent(c.class_name)}?month=${month}&year=${year}`}
-                    className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:border-teal-200 hover:shadow-md transition block"
-                  >
-                    <h3 className="font-semibold text-gray-800 mb-3">{c.class_name}</h3>
-                    <p className="text-sm text-gray-500">Total due: ₹{c.total_due.toLocaleString('en-IN')}</p>
-                    <p className="text-sm text-teal-600">Collected: ₹{c.total_paid.toLocaleString('en-IN')}</p>
-                    <p className={`text-sm font-medium ${c.total_pending > 0 ? 'text-amber-600' : 'text-gray-600'}`}>
-                      Pending: ₹{c.total_pending.toLocaleString('en-IN')}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">{c.student_count} students</p>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {view === 'students' && (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    <th className="text-left py-4 px-6 font-medium text-gray-700">Student</th>
-                    <th className="text-left py-4 px-6 font-medium text-gray-700">Class</th>
-                    <th className="text-left py-4 px-6 font-medium text-gray-700">Fee breakdown</th>
-                    <th className="text-right py-4 px-6 font-medium text-gray-700">Total</th>
-                    <th className="text-right py-4 px-6 font-medium text-gray-700">Paid</th>
-                    <th className="text-right py-4 px-6 font-medium text-gray-700">Pending</th>
-                    <th className="text-center py-4 px-6 font-medium text-gray-700">Status</th>
-                    <th className="text-left py-4 px-6 font-medium text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredStudents.map((s) => (
-                    <tr key={s.student_id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                      <td className="py-4 px-6">
-                        <div>
-                          <p className="font-medium text-gray-800">{s.student_name}</p>
-                          <p className="text-xs text-gray-500">{s.parent_phone}</p>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">{s.class_name}</td>
-                      <td className="py-4 px-6">
-                        <div className="space-y-2">
-                          {Object.entries(
-                            s.fees.reduce((acc, f) => {
-                              const key = f.month && f.year ? `${f.year}-${String(f.month).padStart(2, '0')}` : 'other';
-                              (acc[key] = acc[key] || []).push(f);
-                              return acc;
-                            }, {} as Record<string, typeof s.fees>)
-                          )
-                            .sort(([a], [b]) => (a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)))
-                            .map(([key, monthFees]) => (
-                              <div key={key}>
-                                {key !== 'other' && (
-                                  <div className="text-xs font-semibold text-gray-500 border-b border-gray-200 pb-1 mb-1.5 mt-2 first:mt-0">
-                                    {MONTHS[parseInt(key.split('-')[1])]} {key.split('-')[0]}
-                                  </div>
-                                )}
-                                {monthFees.map((f) => (
-                                  <div key={f.student_fee_id} className="flex items-center gap-2 text-sm">
-                                    <span className="text-gray-600">{f.fee_type}:</span>
-                                    <span className={f.balance > 0 ? 'text-amber-600' : 'text-teal-600'}>
-                                      ₹{f.paid.toLocaleString('en-IN')}/{f.total.toLocaleString('en-IN')}
-                                    </span>
-                                    <button
-                                      onClick={() => handlePrintReceipt(f.student_fee_id, s.student_name)}
-                                      className="text-teal-600 hover:underline text-xs"
-                                    >
-                                      Print
-                                    </button>
-                                    <button
-                                      onClick={() => handleDownloadReceipt(f.student_fee_id, s.student_name)}
-                                      className="text-gray-500 hover:underline text-xs"
-                                    >
-                                      Download
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            ))}
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-right">₹{s.total_due.toLocaleString('en-IN')}</td>
-                      <td className="py-4 px-6 text-right text-teal-600">₹{s.total_paid.toLocaleString('en-IN')}</td>
-                      <td className={`py-4 px-6 text-right font-medium ${s.total_pending > 0 ? 'text-amber-600' : 'text-gray-600'}`}>
-                        ₹{s.total_pending.toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-4 px-6 text-center">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          s.status === 'fully_paid' ? 'bg-teal-100 text-teal-700' :
-                          s.status === 'partial' ? 'bg-amber-100 text-amber-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
-                          {s.status === 'fully_paid' ? 'Paid' : s.status === 'partial' ? 'Partial' : 'Unpaid'}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        {s.fees.some((f) => f.balance > 0) && (
-                          <button
-                            onClick={() => { setPayAllStudent(s); setPayMode('monthly'); }}
-                            className="text-sm font-medium text-teal-600 hover:text-teal-700"
-                          >
-                            Pay
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+      <GlassCard delay={0.1}>
+        {loading ? (
+          <InlineLoading message="Loading collection data…" />
+        ) : !data ? (
+          <p className={dash.empty}>Failed to load data.</p>
+        ) : data.student_wise.length === 0 ? (
+          <div className="p-12 text-center">
+            <Layers className="mx-auto mb-3 h-10 w-10 text-slate-600" />
+            <p className="text-sm text-slate-500">
+              No fee records up to {MONTHS[month]} {year}. Click &quot;Generate fees&quot; to create fee records for all students.
+            </p>
+          </div>
+        ) : (
+          <>
+            {view === 'summary' && (
+              <div>
+                <div className="border-b border-white/10 px-6 py-4">
+                  <h2 className={dash.sectionTitle}>Class-wise payment summary</h2>
+                  <p className="mt-1 text-sm text-slate-500">Open a class to drill into receipts and dues</p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 lg:grid-cols-4">
+                  {(classFilter ? data.class_wise.filter((c) => c.class_name.startsWith(classFilter)) : data.class_wise).map((c, i) => (
+                    <motion.div
+                      key={c.class_name}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.08 + i * 0.04 }}
+                    >
+                      <Link
+                        href={`/dashboard/fees/class/${encodeURIComponent(c.class_name)}?month=${month}&year=${year}`}
+                        className="block rounded-xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-teal-500/30 hover:bg-white/[0.06]"
+                      >
+                        <h3 className="font-semibold text-white">{c.class_name}</h3>
+                        <p className="mt-2 text-sm text-slate-500">Total due: ₹{c.total_due.toLocaleString('en-IN')}</p>
+                        <p className="text-sm text-teal-400">Collected: ₹{c.total_paid.toLocaleString('en-IN')}</p>
+                        <p className={cn('text-sm font-medium', c.total_pending > 0 ? 'text-amber-400' : 'text-slate-400')}>
+                          Pending: ₹{c.total_pending.toLocaleString('en-IN')}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-500">{c.student_count} students</p>
+                      </Link>
+                    </motion.div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                </div>
+              </div>
+            )}
 
-          {view === 'defaulters' && (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <h2 className="p-4 font-semibold text-gray-800 border-b">Students with pending fees ({defaulters.length})</h2>
-              {defaulters.length === 0 ? (
-                <div className="p-12 text-center text-teal-600">All payments clear!</div>
-              ) : (
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      <th className="text-left py-4 px-6 font-medium text-gray-700">Student</th>
-                      <th className="text-left py-4 px-6 font-medium text-gray-700">Class</th>
-                      <th className="text-left py-4 px-6 font-medium text-gray-700">Pending fees</th>
-                      <th className="text-right py-4 px-6 font-medium text-gray-700">Amount due</th>
-                      <th className="text-left py-4 px-6 font-medium text-gray-700">Phone</th>
-                      <th className="text-left py-4 px-6 font-medium text-gray-700">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {defaulters.map((s) => (
-                      <tr key={s.student_id} className="border-b border-gray-50 hover:bg-red-50/30">
-                        <td className="py-4 px-6 font-medium">{s.student_name}</td>
-                        <td className="py-4 px-6">{s.class_name}</td>
-                        <td className="py-4 px-6">
-                          {Object.entries(
-                            s.fees.filter((f) => f.balance > 0).reduce((acc, f) => {
-                              const key = f.month && f.year ? `${f.year}-${String(f.month).padStart(2, '0')}` : 'other';
-                              (acc[key] = acc[key] || []).push(f);
-                              return acc;
-                            }, {} as Record<string, typeof s.fees>)
-                          )
-                            .sort(([a], [b]) => (a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)))
-                            .map(([key, monthFees]) => (
-                              <div key={key} className="mb-2">
-                                {key !== 'other' && (
-                                  <div className="text-xs font-semibold text-gray-500 border-b border-gray-200 pb-0.5 mb-1">
-                                    {MONTHS[parseInt(key.split('-')[1])]} {key.split('-')[0]}
-                                  </div>
-                                )}
-                                {monthFees.map((f) => (
-                                  <div key={f.student_fee_id} className="text-sm">
-                                    {f.fee_type}: ₹{f.balance.toLocaleString('en-IN')} pending
+            {view === 'students' && (
+              <div>
+                <div className="overflow-x-auto">
+                  <table className={dash.table}>
+                    <thead className={dash.thead}>
+                      <tr>
+                        <th className={dash.th}>Student</th>
+                        <th className={dash.th}>Class</th>
+                        <th className={dash.th}>Fee breakdown</th>
+                        <th className={cn(dash.th, 'text-right')}>Total</th>
+                        <th className={cn(dash.th, 'text-right')}>Paid</th>
+                        <th className={cn(dash.th, 'text-right')}>Pending</th>
+                        <th className={cn(dash.th, 'text-center')}>Status</th>
+                        <th className={dash.th}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredStudents.map((s, i) => (
+                        <motion.tr
+                          key={s.student_id}
+                          initial={{ opacity: 0, x: -6 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.05 + Math.min(i, 14) * 0.025 }}
+                          className={dash.tr}
+                        >
+                          <td className={dash.td}>
+                            <div>
+                              <p className="font-medium text-slate-200">{s.student_name}</p>
+                              <p className="text-xs text-slate-500">{s.parent_phone}</p>
+                            </div>
+                          </td>
+                          <td className={dash.td}>{s.class_name}</td>
+                          <td className={dash.td}>
+                            <div className="space-y-2">
+                              {Object.entries(
+                                s.fees.reduce((acc, f) => {
+                                  const key = f.month && f.year ? `${f.year}-${String(f.month).padStart(2, '0')}` : 'other';
+                                  (acc[key] = acc[key] || []).push(f);
+                                  return acc;
+                                }, {} as Record<string, typeof s.fees>)
+                              )
+                                .sort(([a], [b]) => (a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)))
+                                .map(([key, monthFees]) => (
+                                  <div key={key}>
+                                    {key !== 'other' && (
+                                      <div className="mb-1 mt-2 border-b border-white/10 pb-1 text-xs font-semibold text-slate-500 first:mt-0">
+                                        {MONTHS[parseInt(key.split('-')[1])]} {key.split('-')[0]}
+                                      </div>
+                                    )}
+                                    {monthFees.map((f) => (
+                                      <div key={f.student_fee_id} className="flex flex-wrap items-center gap-2 text-sm">
+                                        <span className="text-slate-400">{f.fee_type}:</span>
+                                        <span className={f.balance > 0 ? 'text-amber-400' : 'text-teal-400'}>
+                                          ₹{f.paid.toLocaleString('en-IN')}/{f.total.toLocaleString('en-IN')}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handlePrintReceipt(f.student_fee_id, s.student_name)}
+                                          className="text-teal-400 hover:text-teal-300 text-xs underline-offset-4 hover:underline"
+                                        >
+                                          Print
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDownloadReceipt(f.student_fee_id, s.student_name)}
+                                          className="text-xs text-slate-500 hover:text-slate-300 underline-offset-4 hover:underline"
+                                        >
+                                          Download
+                                        </button>
+                                      </div>
+                                    ))}
                                   </div>
                                 ))}
-                              </div>
-                            ))}
-                        </td>
-                        <td className="py-4 px-6 text-right font-medium text-amber-600">₹{s.total_pending.toLocaleString('en-IN')}</td>
-                        <td className="py-4 px-6 text-sm">{s.parent_phone}</td>
-                        <td className="py-4 px-6">
-                          <button
-                            onClick={() => { setPayAllStudent(s); setPayMode('monthly'); }}
-                            className="text-sm font-medium text-teal-600 hover:underline"
+                            </div>
+                          </td>
+                          <td className={cn(dash.td, 'text-right tabular-nums')}>₹{s.total_due.toLocaleString('en-IN')}</td>
+                          <td className={cn(dash.td, 'text-right tabular-nums text-teal-400')}>₹{s.total_paid.toLocaleString('en-IN')}</td>
+                          <td className={cn(dash.td, 'text-right tabular-nums font-medium', s.total_pending > 0 ? 'text-amber-400' : 'text-slate-400')}>
+                            ₹{s.total_pending.toLocaleString('en-IN')}
+                          </td>
+                          <td className={cn(dash.td, 'text-center')}>
+                            <span
+                              className={cn(
+                                dash.badge,
+                                s.status === 'fully_paid' ? dash.badgeTeal : s.status === 'partial' ? dash.badgeAmber : dash.badgeRed
+                              )}
+                            >
+                              {s.status === 'fully_paid' ? 'Paid' : s.status === 'partial' ? 'Partial' : 'Unpaid'}
+                            </span>
+                          </td>
+                          <td className={dash.td}>
+                            {s.fees.some((f) => f.balance > 0) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPayAllStudent(s);
+                                  setPayMode('monthly');
+                                }}
+                                className={dash.link}
+                              >
+                                Pay
+                              </button>
+                            )}
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {view === 'defaulters' && (
+              <div>
+                <div className="border-b border-white/10 px-6 py-4">
+                  <h2 className={dash.sectionTitle}>Students with pending fees ({defaulters.length})</h2>
+                </div>
+                {defaulters.length === 0 ? (
+                  <p className="py-12 text-center text-teal-400">All payments clear!</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className={dash.table}>
+                      <thead className={dash.thead}>
+                        <tr>
+                          <th className={dash.th}>Student</th>
+                          <th className={dash.th}>Class</th>
+                          <th className={dash.th}>Pending fees</th>
+                          <th className={cn(dash.th, 'text-right')}>Amount due</th>
+                          <th className={dash.th}>Phone</th>
+                          <th className={dash.th}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {defaulters.map((s, i) => (
+                          <motion.tr
+                            key={s.student_id}
+                            initial={{ opacity: 0, x: -6 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.05 + Math.min(i, 14) * 0.025 }}
+                            className={cn(dash.tr, 'hover:bg-red-500/[0.04]')}
                           >
-                            Pay
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-        </>
-      )}
+                            <td className={cn(dash.td, 'font-medium text-slate-200')}>{s.student_name}</td>
+                            <td className={dash.td}>{s.class_name}</td>
+                            <td className={dash.td}>
+                              {Object.entries(
+                                s.fees.filter((f) => f.balance > 0).reduce((acc, f) => {
+                                  const key = f.month && f.year ? `${f.year}-${String(f.month).padStart(2, '0')}` : 'other';
+                                  (acc[key] = acc[key] || []).push(f);
+                                  return acc;
+                                }, {} as Record<string, typeof s.fees>)
+                              )
+                                .sort(([a], [b]) => (a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)))
+                                .map(([key, monthFees]) => (
+                                  <div key={key} className="mb-2">
+                                    {key !== 'other' && (
+                                      <div className="mb-1 border-b border-white/10 pb-0.5 text-xs font-semibold text-slate-500">
+                                        {MONTHS[parseInt(key.split('-')[1])]} {key.split('-')[0]}
+                                      </div>
+                                    )}
+                                    {monthFees.map((f) => (
+                                      <div key={f.student_fee_id} className="text-sm text-slate-400">
+                                        {f.fee_type}: ₹{f.balance.toLocaleString('en-IN')} pending
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+                            </td>
+                            <td className={cn(dash.td, 'text-right font-medium text-amber-400 tabular-nums')}>
+                              ₹{s.total_pending.toLocaleString('en-IN')}
+                            </td>
+                            <td className={dash.td}>{s.parent_phone}</td>
+                            <td className={dash.td}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPayAllStudent(s);
+                                  setPayMode('monthly');
+                                }}
+                                className={dash.link}
+                              >
+                                Pay
+                              </button>
+                            </td>
+                          </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </GlassCard>
 
       {payAllStudent && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto my-4">
-            <h2 className="text-lg font-semibold mb-4">Record payment – {payAllStudent.student_name}</h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Choose monthly, yearly, or all pending (includes arrears). Amount is calculated from selected fee types.
-            </p>
-            <div className="mb-4 flex flex-wrap gap-3 p-3 bg-teal-50 rounded-lg border border-teal-100">
-              <label className="flex items-center gap-2 cursor-pointer">
+        <DashboardModal
+          wide
+          title={`Record payment – ${payAllStudent.student_name}`}
+          subtitle="Choose monthly, yearly, or all pending (includes arrears). Amount is calculated from selected fee types."
+          onClose={closePayModal}
+        >
+          <div className={cn(dash.innerPanel, 'mb-4 border-teal-500/20 bg-teal-500/5')}>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex cursor-pointer items-center gap-2">
                 <input
                   type="radio"
                   name="payMode"
                   checked={payMode === 'monthly'}
                   onChange={() => setPayMode('monthly')}
-                  className="rounded-full border-gray-300"
+                  className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                 />
-                <span className="text-sm font-medium text-teal-800">Monthly</span>
+                <span className="text-sm font-medium text-teal-200">Monthly</span>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex cursor-pointer items-center gap-2">
                 <input
                   type="radio"
                   name="payMode"
                   checked={payMode === 'yearly'}
                   onChange={() => setPayMode('yearly')}
-                  className="rounded-full border-gray-300"
+                  className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                 />
-                <span className="text-sm font-medium text-teal-800">Yearly</span>
+                <span className="text-sm font-medium text-teal-200">Yearly</span>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex cursor-pointer items-center gap-2">
                 <input
                   type="radio"
                   name="payMode"
                   checked={payMode === 'all_pending'}
                   onChange={() => setPayMode('all_pending')}
-                  className="rounded-full border-gray-300"
+                  className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                 />
-                <span className="text-sm font-medium text-teal-800">All pending</span>
+                <span className="text-sm font-medium text-teal-200">All pending</span>
               </label>
             </div>
-            {payMode !== 'all_pending' && (
-              <div className="mb-4 p-3 rounded-lg border border-gray-200 bg-gray-50">
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Fee types for this payment</div>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {classFeeOptions.map((f) => {
-                    const checked = selectedFeeStructureIds.includes(f.id);
-                    return (
-                      <label key={f.id} className="flex items-center justify-between gap-3 text-sm cursor-pointer">
-                        <span className="text-gray-700">
-                          {f.fee_type_name} {f.billing_period_display ? `(${f.billing_period_display})` : ''}
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            setSelectedFeeStructureIds((prev) =>
-                              checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
-                            )
-                          }
-                          className="rounded border-gray-300"
-                        />
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="mb-4 p-3 bg-teal-50 rounded-lg border border-teal-100">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Breakup</div>
-              <div className="max-h-40 overflow-y-auto space-y-1.5 text-sm">
-                {payMode === 'all_pending' ? (
-                  payAllStudent.fees.filter((f) => f.balance > 0).length === 0 ? (
-                    <span className="text-teal-600">No pending fees</span>
-                  ) : (
-                    payAllStudent.fees
-                      .filter((f) => f.balance > 0)
-                      .sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0))
-                      .map((f) => (
-                        <div key={f.student_fee_id} className="flex justify-between">
-                          <span className="text-gray-700">{f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}</span>
-                          <span className="text-amber-600 font-medium">₹{f.balance.toLocaleString('en-IN')}</span>
-                        </div>
-                      ))
-                  )
-                ) : !paymentPreview ? (
-                  <span className="text-gray-500">Loading...</span>
-                ) : payMode === 'monthly' ? (
-                  paymentPreview.monthly.breakdown.length === 0 ? (
-                    <span className="text-teal-600">No fees for {MONTHS[month]} {year}</span>
-                  ) : (
-                    paymentPreview.monthly.breakdown.map((f, i) => (
-                      <div key={i} className="flex justify-between">
-                        <span className="text-gray-700">{f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}</span>
-                        <span className="text-amber-600 font-medium">₹{f.balance.toLocaleString('en-IN')}</span>
-                      </div>
-                    ))
-                  )
-                ) : (
-                  paymentPreview.yearly.breakdown.length === 0 ? (
-                    <span className="text-teal-600">No fees for full year</span>
-                  ) : (
-                    (() => {
-                      const byFeeType = paymentPreview.yearly.breakdown.reduce((acc, f) => {
-                        const key = f.fee_type;
-                        if (!acc[key]) acc[key] = { items: [], totalBefore: 0, totalAfter: 0 };
-                        acc[key].items.push(f);
-                        acc[key].totalBefore += f.balance;
-                        acc[key].totalAfter += f.after_discount ?? f.balance;
-                        return acc;
-                      }, {} as Record<string, { items: typeof paymentPreview.yearly.breakdown; totalBefore: number; totalAfter: number }>);
-                      return Object.entries(byFeeType).map(([feeType, { items, totalBefore, totalAfter }]) => {
-                        const hasDiscount = totalBefore > totalAfter;
-                        const discountPct = hasDiscount && totalBefore > 0 ? Math.round(((totalBefore - totalAfter) / totalBefore) * 100) : 0;
-                        return (
-                          <div key={feeType} className="border-b border-teal-100 last:border-0 pb-1 last:pb-0">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedFeeType((prev) => (prev === feeType ? null : feeType))}
-                              className="w-full flex justify-between items-center text-left py-1 hover:bg-teal-100/50 rounded px-1 -mx-1"
-                            >
-                              <span className="font-medium text-gray-800 flex items-center gap-1">
-                                <span className={`inline-block transition-transform text-xs ${expandedFeeType === feeType ? 'rotate-90' : ''}`}>▶</span>
-                                {feeType}
-                              </span>
-                              <span className="text-right">
-                                {hasDiscount ? (
-                                  <>
-                                    <span className="text-gray-500 line-through text-sm mr-1">₹{totalBefore.toLocaleString('en-IN')}</span>
-                                    <span className="text-emerald-600 font-medium">₹{totalAfter.toLocaleString('en-IN')}</span>
-                                    <span className="text-emerald-600 text-xs ml-1">({discountPct}% off)</span>
-                                  </>
-                                ) : (
-                                  <span className="text-amber-600 font-medium">₹{totalAfter.toLocaleString('en-IN')}</span>
-                                )}
-                              </span>
-                            </button>
-                            {expandedFeeType === feeType && (
-                              <div className="ml-4 mt-1 space-y-0.5 pl-2 border-l-2 border-teal-200">
-                                {items.sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0)).map((f, i) => {
-                                  const itemHasDiscount = (f.after_discount ?? f.balance) < f.balance;
-                                  const itemPct = f.discount_percent ?? (f.balance > 0 ? Math.round(((f.balance - (f.after_discount ?? f.balance)) / f.balance) * 100) : 0);
-                                  return (
-                                    <div key={i} className="flex justify-between text-sm text-gray-600">
-                                      <span>{f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}</span>
-                                      {itemHasDiscount ? (
-                                        <span>
-                                          <span className="line-through text-gray-400 mr-1">₹{f.balance.toLocaleString('en-IN')}</span>
-                                          <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
-                                          <span className="text-emerald-600 text-xs ml-1">({itemPct}% off)</span>
-                                        </span>
-                                      ) : (
-                                        <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      });
-                    })()
-                  )
-                )}
-              </div>
-              <div className="pt-2 mt-2 border-t border-teal-200 space-y-1">
-                {payMode === 'all_pending' ? (
-                  <div className="flex justify-between font-semibold text-teal-700">
-                    <span>All pending (up to {MONTHS[month]} {year})</span>
-                    <span>₹{payAllStudent.total_pending.toLocaleString('en-IN')}</span>
-                  </div>
-                ) : paymentPreview ? (
-                  payMode === 'monthly' ? (
-                    <div className="flex justify-between font-semibold text-teal-700">
-                      <span>{MONTHS[month]} {year} only</span>
-                      <span>₹{paymentPreview.monthly.amount.toLocaleString('en-IN')}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className={`flex justify-between ${(paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount ? 'text-sm text-gray-600' : 'font-semibold text-teal-700'}`}>
-                        <span>Full academic year (all months)</span>
-                        <span>₹{(paymentPreview.yearly.amount_before_discount ?? paymentPreview.yearly.amount).toLocaleString('en-IN')}</span>
-                      </div>
-                      {(paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount && (
-                        <div className="flex justify-between font-semibold text-teal-700">
-                          <span>Discounted amount to pay</span>
-                          <span>₹{paymentPreview.yearly.amount.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                    </>
-                  )
-                ) : null}
+          </div>
+          {payMode !== 'all_pending' && (
+            <div className={cn(dash.innerPanel, 'mb-4')}>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Fee types for this payment</div>
+              <div className="max-h-40 space-y-2 overflow-y-auto">
+                {classFeeOptions.map((f) => {
+                  const checked = selectedFeeStructureIds.includes(f.id);
+                  return (
+                    <label key={f.id} className="flex cursor-pointer items-center justify-between gap-3 text-sm text-slate-300">
+                      <span>
+                        {f.fee_type_name} {f.billing_period_display ? `(${f.billing_period_display})` : ''}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setSelectedFeeStructureIds((prev) =>
+                            checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                          )
+                        }
+                        className="rounded border-white/20 bg-white/10 accent-teal-500"
+                      />
+                    </label>
+                  );
+                })}
               </div>
             </div>
-            <form onSubmit={handlePayAll} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input
-                  type="date"
-                  value={paymentForm.payment_date}
-                  onChange={(e) => setPaymentForm((f) => ({ ...f, payment_date: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mode</label>
-                <select
-                  value={paymentForm.payment_mode}
-                  onChange={(e) => setPaymentForm((f) => ({ ...f, payment_mode: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="Online">Online (Razorpay)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <input
-                  value={paymentForm.notes}
-                  onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" disabled={saving || (payMode !== 'all_pending' && !paymentPreview)} className="px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
-                  {saving ? 'Processing...' : payMode === 'all_pending' ? `Pay ₹${payAllStudent.total_pending.toLocaleString('en-IN')}` : paymentPreview ? (payMode === 'yearly' ? `Pay ₹${paymentPreview.yearly.amount.toLocaleString('en-IN')}` : `Pay ₹${paymentPreview.monthly.amount.toLocaleString('en-IN')}`) : 'Loading...'}
-                </button>
-                <button type="button" onClick={() => { setPayAllStudent(null); setPayMode('monthly'); }} className="px-4 py-2.5 text-gray-600 hover:text-gray-800">
-                  Cancel
-                </button>
-              </div>
-            </form>
+          )}
+          <div className={cn(dash.innerPanel, 'mb-4 border-teal-500/20 bg-teal-500/5')}>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Breakup</div>
+            <div className="max-h-40 space-y-1.5 overflow-y-auto text-sm">
+              {payMode === 'all_pending' ? (
+                payAllStudent.fees.filter((f) => f.balance > 0).length === 0 ? (
+                  <span className="text-teal-400">No pending fees</span>
+                ) : (
+                  payAllStudent.fees
+                    .filter((f) => f.balance > 0)
+                    .sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0))
+                    .map((f) => (
+                      <div key={f.student_fee_id} className="flex justify-between gap-4">
+                        <span className="text-slate-300">
+                          {f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}
+                        </span>
+                        <span className="font-medium text-amber-400">₹{f.balance.toLocaleString('en-IN')}</span>
+                      </div>
+                    ))
+                )
+              ) : !paymentPreview ? (
+                <span className="text-slate-500">Loading...</span>
+              ) : payMode === 'monthly' ? (
+                paymentPreview.monthly.breakdown.length === 0 ? (
+                  <span className="text-teal-400">No fees for {MONTHS[month]} {year}</span>
+                ) : (
+                  paymentPreview.monthly.breakdown.map((f, idx) => (
+                    <div key={idx} className="flex justify-between gap-4">
+                      <span className="text-slate-300">
+                        {f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}
+                      </span>
+                      <span className="font-medium text-amber-400">₹{f.balance.toLocaleString('en-IN')}</span>
+                    </div>
+                  ))
+                )
+              ) : paymentPreview.yearly.breakdown.length === 0 ? (
+                <span className="text-teal-400">No fees for full year</span>
+              ) : (
+                (() => {
+                  const byFeeType = paymentPreview.yearly.breakdown.reduce((acc, f) => {
+                    const key = f.fee_type;
+                    if (!acc[key]) acc[key] = { items: [], totalBefore: 0, totalAfter: 0 };
+                    acc[key].items.push(f);
+                    acc[key].totalBefore += f.balance;
+                    acc[key].totalAfter += f.after_discount ?? f.balance;
+                    return acc;
+                  }, {} as Record<string, { items: typeof paymentPreview.yearly.breakdown; totalBefore: number; totalAfter: number }>);
+                  return Object.entries(byFeeType).map(([feeType, { items, totalBefore, totalAfter }]) => {
+                    const hasDiscount = totalBefore > totalAfter;
+                    const discountPct = hasDiscount && totalBefore > 0 ? Math.round(((totalBefore - totalAfter) / totalBefore) * 100) : 0;
+                    return (
+                      <div key={feeType} className="border-b border-teal-500/15 pb-1 last:border-0 last:pb-0">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedFeeType((prev) => (prev === feeType ? null : feeType))}
+                          className="-mx-1 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left transition hover:bg-white/10"
+                        >
+                          <span className="flex items-center gap-1 font-medium text-slate-200">
+                            <span className={`inline-block text-xs transition-transform ${expandedFeeType === feeType ? 'rotate-90' : ''}`}>▶</span>
+                            {feeType}
+                          </span>
+                          <span className="text-right">
+                            {hasDiscount ? (
+                              <>
+                                <span className="mr-1 text-sm text-slate-500 line-through">₹{totalBefore.toLocaleString('en-IN')}</span>
+                                <span className="font-medium text-emerald-400">₹{totalAfter.toLocaleString('en-IN')}</span>
+                                <span className="ml-1 text-xs text-emerald-400">({discountPct}% off)</span>
+                              </>
+                            ) : (
+                              <span className="font-medium text-amber-400">₹{totalAfter.toLocaleString('en-IN')}</span>
+                            )}
+                          </span>
+                        </button>
+                        {expandedFeeType === feeType && (
+                          <div className="ml-4 mt-1 space-y-0.5 border-l border-teal-500/30 pl-2">
+                            {items.sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0)).map((f, idx2) => {
+                              const itemHasDiscount = (f.after_discount ?? f.balance) < f.balance;
+                              const itemPct =
+                                f.discount_percent ?? (f.balance > 0 ? Math.round(((f.balance - (f.after_discount ?? f.balance)) / f.balance) * 100) : 0);
+                              return (
+                                <div key={idx2} className="flex justify-between text-sm text-slate-400">
+                                  <span>{f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}</span>
+                                  {itemHasDiscount ? (
+                                    <span>
+                                      <span className="mr-1 text-slate-500 line-through">₹{f.balance.toLocaleString('en-IN')}</span>
+                                      <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
+                                      <span className="ml-1 text-xs text-emerald-400">({itemPct}% off)</span>
+                                    </span>
+                                  ) : (
+                                    <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()
+              )}
+            </div>
+            <div className="mt-3 space-y-1 border-t border-teal-500/20 pt-2">
+              {payMode === 'all_pending' ? (
+                <div className="flex justify-between font-semibold text-teal-300">
+                  <span>
+                    All pending (up to {MONTHS[month]} {year})
+                  </span>
+                  <span>₹{payAllStudent.total_pending.toLocaleString('en-IN')}</span>
+                </div>
+              ) : paymentPreview ? (
+                payMode === 'monthly' ? (
+                  <div className="flex justify-between font-semibold text-teal-300">
+                    <span>
+                      {MONTHS[month]} {year} only
+                    </span>
+                    <span>₹{paymentPreview.monthly.amount.toLocaleString('en-IN')}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className={cn(
+                        'flex justify-between',
+                        (paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount ? 'text-sm text-slate-400' : 'font-semibold text-teal-300'
+                      )}
+                    >
+                      <span>Full academic year (all months)</span>
+                      <span>₹{(paymentPreview.yearly.amount_before_discount ?? paymentPreview.yearly.amount).toLocaleString('en-IN')}</span>
+                    </div>
+                    {(paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount && (
+                      <div className="flex justify-between font-semibold text-teal-300">
+                        <span>Discounted amount to pay</span>
+                        <span>₹{paymentPreview.yearly.amount.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                  </>
+                )
+              ) : null}
+            </div>
           </div>
-        </div>
+          <form onSubmit={handlePayAll} className="space-y-4">
+            <div>
+              <label className={dash.label}>Date</label>
+              <input
+                type="date"
+                value={paymentForm.payment_date}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, payment_date: e.target.value }))}
+                className={dash.field}
+                required
+              />
+            </div>
+            <div>
+              <label className={dash.label}>Mode</label>
+              <select
+                value={paymentForm.payment_mode}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, payment_mode: e.target.value }))}
+                className={dash.field}
+              >
+                <option value="Cash">Cash</option>
+                <option value="Online">Online (Razorpay)</option>
+              </select>
+            </div>
+            <div>
+              <label className={dash.label}>Notes</label>
+              <input
+                value={paymentForm.notes}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
+                className={dash.field}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button
+                type="submit"
+                disabled={saving || (payMode !== 'all_pending' && !paymentPreview)}
+                className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/25 hover:from-teal-400 hover:to-cyan-400 border-0 disabled:opacity-50"
+              >
+                {saving
+                  ? 'Processing...'
+                  : payMode === 'all_pending'
+                    ? `Pay ₹${payAllStudent.total_pending.toLocaleString('en-IN')}`
+                    : paymentPreview
+                      ? payMode === 'yearly'
+                        ? `Pay ₹${paymentPreview.yearly.amount.toLocaleString('en-IN')}`
+                        : `Pay ₹${paymentPreview.monthly.amount.toLocaleString('en-IN')}`
+                      : 'Loading...'}
+              </Button>
+              <Button type="button" variant="outline" onClick={closePayModal} className="rounded-xl border-white/10 bg-white/5 text-slate-300 hover:bg-white/10">
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </DashboardModal>
       )}
-    </div>
+    </PageShell>
   );
 }

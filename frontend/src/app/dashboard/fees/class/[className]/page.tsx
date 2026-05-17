@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { ArrowLeft, CalendarDays, ChevronRight, Layers } from 'lucide-react';
 import {
   getCollectionSummary,
   getReceipt,
@@ -14,6 +16,13 @@ import {
   createFeeCollectionOrder,
   verifyFeeCollectionPayment,
 } from '@/lib/api';
+import { PageHeader } from '@/components/dashboard/page-header';
+import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
+import { InlineLoading } from '@/components/dashboard/loading-state';
+import { DashboardModal } from '@/components/dashboard/modal';
+import { Button } from '@/components/ui/button';
+import { dash } from '@/lib/dashboard-ui';
+import { cn } from '@/lib/utils';
 
 declare global {
   interface Window {
@@ -112,6 +121,11 @@ export default function ClassFeesPage() {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
+
+  const closePayModal = () => {
+    setPayAllStudent(null);
+    setPayMode('monthly');
+  };
 
   const loadRazorpayScript = () =>
     new Promise<boolean>((resolve) => {
@@ -370,536 +384,643 @@ export default function ClassFeesPage() {
   const availableMonths = MONTHS.slice(1, currentMonth + 1).map((m, i) => ({ value: i + 1, label: m }));
 
   return (
-    <div>
-      <div className="mb-6 flex items-center gap-4">
-        <Link href="/dashboard/fees" className="text-teal-600 hover:text-teal-700 font-medium">
-          ← Back to Fee Collection
+    <PageShell>
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+        <Link
+          href={`/dashboard/fees?month=${month}`}
+          className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-teal-400 transition hover:text-teal-300"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Fee Collection
         </Link>
-      </div>
+      </motion.div>
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-800">{className}</h1>
-        <p className="text-gray-600 mt-1">
-          All students in this class — fees up to {MONTHS[month]} {year} (includes previous dues)
-        </p>
-      </div>
+      <PageHeader
+        icon={Layers}
+        eyebrow={`Class roster · ${MONTHS[month]} ${year}`}
+        title={className}
+        highlight="Fees"
+        subtitle={`All students in this class — fees up to ${MONTHS[month]} ${year} (includes previous dues).`}
+      />
 
-      <div className="flex gap-4 mb-6 items-center flex-wrap">
-        <div className="px-4 py-2 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-sm font-medium">
-          Current month ({MONTHS[currentMonth]} {currentYear})
+      <GlassCard delay={0.05}>
+        <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-5 py-4">
+          <div className={cn(dash.sectionChip, 'flex items-center gap-1.5 px-3 py-2 font-medium')}>
+            <CalendarDays className="h-3.5 w-3.5" />
+            Current month ({MONTHS[currentMonth]} {currentYear})
+          </div>
+          <select
+            value={month}
+            onChange={(e) => setMonth(parseInt(e.target.value, 10))}
+            className={dash.fieldSm}
+            aria-label="Reporting month"
+          >
+            {availableMonths.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label} {currentYear}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={handleGenerateFees}
+            disabled={generating || !canGenerateFees}
+            title={!canGenerateFees ? 'Generate fees is not allowed for past months' : undefined}
+            className="rounded-xl border-0 bg-amber-500 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-600 disabled:opacity-50"
+          >
+            {generating ? 'Generating…' : 'Generate fees'}
+          </Button>
+          {!canGenerateFees && (
+            <span className="text-xs text-slate-500 md:max-w-md">
+              Viewing {MONTHS[month]} {year}. Generate fees only for current or future months.
+            </span>
+          )}
         </div>
-        <select
-          value={month}
-          onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-          className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-        >
-          {availableMonths.map(({ value, label }) => (
-            <option key={value} value={value}>{label} {currentYear}</option>
-          ))}
-        </select>
-        <button
-          onClick={handleGenerateFees}
-          disabled={generating || !canGenerateFees}
-          title={!canGenerateFees ? 'Generate fees is not allowed for past months' : undefined}
-          className="px-6 py-2.5 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 disabled:opacity-50"
-        >
-          {generating ? 'Generating...' : 'Generate fees'}
-        </button>
-        {!canGenerateFees && (
-          <span className="text-sm text-gray-500">
-            Viewing {MONTHS[month]} {year}. Generate fees only for current or future months.
-          </span>
-        )}
-      </div>
+      </GlassCard>
 
       {generateSuccess && (
-        <div className="mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={dash.success}
+          role="status"
+        >
           {generateSuccess}
-        </div>
+        </motion.div>
       )}
 
-      {loading ? (
-        <div className="p-12 text-center text-gray-500">Loading...</div>
-      ) : !data ? (
-        <div className="p-12 text-center text-gray-500">Failed to load data.</div>
-      ) : (
-        <>
-          {classSummary && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-sm text-gray-500">Total due</p>
-                <p className="text-lg font-semibold text-gray-800">₹{classSummary.total_due.toLocaleString('en-IN')}</p>
+      <GlassCard delay={0.1}>
+        {loading ? (
+          <InlineLoading message="Loading class collection data…" />
+        ) : !data ? (
+          <p className={dash.empty}>Failed to load data.</p>
+        ) : (
+          <>
+            {classSummary && (
+              <div className="border-b border-white/10 px-6 py-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    { label: 'Total due', value: classSummary.total_due, accent: 'text-white' },
+                    { label: 'Collected', value: classSummary.total_paid, accent: 'text-teal-400' },
+                    {
+                      label: 'Pending',
+                      value: classSummary.total_pending,
+                      accent: classSummary.total_pending > 0 ? 'text-amber-400' : 'text-slate-400',
+                    },
+                    { label: 'Students', value: classSummary.student_count, accent: 'text-white', isCount: true },
+                  ].map((stat, i) => (
+                    <motion.div
+                      key={stat.label}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.06 + i * 0.04 }}
+                      className="rounded-xl border border-white/10 bg-white/[0.03] p-5"
+                    >
+                      <p className="text-sm text-slate-500">{stat.label}</p>
+                      <p className={cn('mt-1 text-2xl font-bold tabular-nums', stat.accent)}>
+                        {stat.isCount ? stat.value : `₹${Number(stat.value).toLocaleString('en-IN')}`}
+                      </p>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
-              <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-sm text-gray-500">Collected</p>
-                <p className="text-lg font-semibold text-teal-600">₹{classSummary.total_paid.toLocaleString('en-IN')}</p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-sm text-gray-500">Pending</p>
-                <p className={`text-lg font-semibold ${classSummary.total_pending > 0 ? 'text-amber-600' : 'text-gray-600'}`}>
-                  ₹{classSummary.total_pending.toLocaleString('en-IN')}
+            )}
+
+            {students.length === 0 ? (
+              <div className="p-12 text-center">
+                <Layers className="mx-auto mb-3 h-10 w-10 text-slate-600" />
+                <p className="text-sm text-slate-500">
+                  No fee records for {className} up to {MONTHS[month]} {year}. Click &quot;Generate fees&quot; to create fee
+                  records.
                 </p>
               </div>
-              <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-sm text-gray-500">Students</p>
-                <p className="text-lg font-semibold text-gray-800">{classSummary.student_count}</p>
-              </div>
-            </div>
-          )}
-
-          {students.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-100 p-12 text-center text-gray-500">
-              No fee records for {className} up to {MONTHS[month]} {year}. Click &quot;Generate fees&quot; to create fee records.
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    <th className="text-left py-4 px-6 font-medium text-gray-700 w-10"></th>
-                    <th className="text-left py-4 px-6 font-medium text-gray-700">Student</th>
-                    <th className="text-right py-4 px-6 font-medium text-gray-700">Total</th>
-                    <th className="text-right py-4 px-6 font-medium text-gray-700">Paid</th>
-                    <th className="text-right py-4 px-6 font-medium text-gray-700">Pending</th>
-                    <th className="text-center py-4 px-6 font-medium text-gray-700">Status</th>
-                    <th className="text-left py-4 px-6 font-medium text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {students.map((s) => (
-                    <React.Fragment key={s.student_id}>
-                      <tr
-                        className={`border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer ${expandedRow === s.student_id ? 'bg-teal-50/50' : ''}`}
-                        onClick={() => setExpandedRow((prev) => (prev === s.student_id ? null : s.student_id))}
-                      >
-                        <td className="py-4 px-6">
-                          <span className={`inline-block transition-transform ${expandedRow === s.student_id ? 'rotate-90' : ''}`}>
-                            ▶
-                          </span>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div>
-                            <Link href={`/dashboard/students/${s.student_id}`} className="font-medium text-teal-600 hover:text-teal-700" onClick={(e) => e.stopPropagation()}>
-                              {s.student_name}
-                            </Link>
-                            <p className="text-xs text-gray-500">{s.parent_phone}</p>
-                          </div>
-                        </td>
-                        <td className="py-4 px-6 text-right">₹{s.total_due.toLocaleString('en-IN')}</td>
-                        <td className="py-4 px-6 text-right text-teal-600">₹{s.total_paid.toLocaleString('en-IN')}</td>
-                        <td className={`py-4 px-6 text-right font-medium ${s.total_pending > 0 ? 'text-amber-600' : 'text-gray-600'}`}>
-                          ₹{s.total_pending.toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-4 px-6 text-center">
-                          {(() => {
-                            if (s.detailed_status?.academic_year_complete) {
-                              return (
-                                <span 
-                                  className="px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-700"
-                                  title="All academic year fees have been paid"
-                                >
-                                  All Paid
-                                </span>
-                              );
-                            } else if (s.detailed_status?.current_month_paid) {
-                              return (
-                                <span 
-                                  className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700"
-                                  title={`${MONTHS[s.detailed_status.current_month]} fees are paid, but some previous months may be pending`}
-                                >
-                                  {MONTHS[s.detailed_status.current_month]} Paid
-                                </span>
-                              );
-                            } else if (s.status === 'fully_paid') {
-                              return (
-                                <span 
-                                  className="px-2 py-1 rounded text-xs font-medium bg-teal-100 text-teal-700"
-                                  title="All dues up to selected month are paid"
-                                >
-                                  Paid
-                                </span>
-                              );
-                            } else if (s.status === 'partial') {
-                              return (
-                                <span 
-                                  className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700"
-                                  title="Some fees have been paid but there are still pending dues"
-                                >
-                                  Partial
-                                </span>
-                              );
-                            } else {
-                              return (
-                                <span 
-                                  className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700"
-                                  title="No payments received yet"
-                                >
-                                  Unpaid
-                                </span>
-                              );
-                            }
-                          })()}
-                        </td>
-                        <td className="py-4 px-6" onClick={(e) => e.stopPropagation()}>
-                          {s.fees.some((f) => f.balance > 0) && (
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => { setPayAllStudent(s); setPayMode('monthly'); }}
-                                className="text-sm font-medium text-teal-600 hover:underline"
-                              >
-                                Pay
-                              </button>
-                              {s.detailed_status?.current_month_paid && !s.detailed_status?.academic_year_complete && (
-                                <button
-                                  onClick={() => { setPayAllStudent(s); setPayMode('yearly'); }}
-                                  className="text-sm font-medium text-amber-600 hover:underline"
-                                  title="Complete academic year payment with potential discounts"
-                                >
-                                  Complete Year
-                                </button>
-                              )}
-                            </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className={dash.table}>
+                  <thead className={dash.thead}>
+                    <tr>
+                      <th className={cn(dash.th, 'w-10')} aria-hidden />
+                      <th className={dash.th}>Student</th>
+                      <th className={cn(dash.th, 'text-right')}>Total</th>
+                      <th className={cn(dash.th, 'text-right')}>Paid</th>
+                      <th className={cn(dash.th, 'text-right')}>Pending</th>
+                      <th className={cn(dash.th, 'text-center')}>Status</th>
+                      <th className={dash.th}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {students.map((s, rowIndex) => (
+                      <React.Fragment key={s.student_id}>
+                        <motion.tr
+                          initial={{ opacity: 0, x: -6 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.05 + Math.min(rowIndex, 14) * 0.025 }}
+                          className={cn(
+                            dash.tr,
+                            'cursor-pointer',
+                            expandedRow === s.student_id && 'bg-teal-500/[0.08]'
                           )}
-                        </td>
-                      </tr>
-                      {expandedRow === s.student_id && (
-                        <tr key={`${s.student_id}-expand`} className="border-b border-gray-50 bg-gray-50/30">
-                          <td colSpan={7} className="py-4 px-6">
-                            <div className="space-y-2 pl-6">
-                              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Fee breakdown</div>
-                              {(() => {
-                                const unpaidFees = s.fees.filter((f) => f.balance > 0);
-                                if (unpaidFees.length === 0) {
-                                  return <span className="text-sm text-teal-600">All paid</span>;
-                                }
-                                return Object.entries(
-                                  unpaidFees.reduce((acc, f) => {
-                                    const key = f.month && f.year ? `${f.year}-${String(f.month).padStart(2, '0')}` : 'other';
-                                    (acc[key] = acc[key] || []).push(f);
-                                    return acc;
-                                  }, {} as Record<string, typeof s.fees>)
-                                )
-                                  .sort(([a], [b]) => (a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)))
-                                  .map(([key, monthFees]) => (
-                                    <div key={key}>
-                                      {key !== 'other' && (
-                                        <div className="text-xs font-semibold text-gray-500 border-b border-gray-200 pb-1 mb-1.5 mt-2 first:mt-0">
-                                          {MONTHS[parseInt(key.split('-')[1])]} {key.split('-')[0]}
-                                        </div>
-                                      )}
-                                      {monthFees.map((f) => (
-                                        <div key={f.student_fee_id} className="flex items-center gap-2 text-sm">
-                                          <span className="text-gray-600">{f.fee_type}:</span>
-                                          <span className="text-amber-600">
-                                            ₹{f.balance.toLocaleString('en-IN')} pending
-                                          </span>
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); handlePrintReceipt(f.student_fee_id, s.student_name); }}
-                                            className="text-teal-600 hover:underline text-xs"
-                                          >
-                                            Print
-                                          </button>
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); handleDownloadReceipt(f.student_fee_id, s.student_name); }}
-                                            className="text-gray-500 hover:underline text-xs"
-                                          >
-                                            Download
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ));
-                              })()}
+                          onClick={() => setExpandedRow((prev) => (prev === s.student_id ? null : s.student_id))}
+                        >
+                          <td className={cn(dash.td, 'w-10')} onClick={(e) => e.stopPropagation()}>
+                            <ChevronRight
+                              className={cn('h-4 w-4 text-slate-500 transition-transform', expandedRow === s.student_id && 'rotate-90')}
+                              aria-hidden
+                            />
+                          </td>
+                          <td className={dash.td}>
+                            <div>
+                              <Link
+                                href={`/dashboard/students/${s.student_id}`}
+                                className="font-medium text-teal-400 hover:text-teal-300"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {s.student_name}
+                              </Link>
+                              <p className="text-xs text-slate-500">{s.parent_phone}</p>
                             </div>
                           </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
+                          <td className={cn(dash.td, 'text-right tabular-nums')}>₹{s.total_due.toLocaleString('en-IN')}</td>
+                          <td className={cn(dash.td, 'text-right tabular-nums text-teal-400')}>
+                            ₹{s.total_paid.toLocaleString('en-IN')}
+                          </td>
+                          <td
+                            className={cn(
+                              dash.td,
+                              'text-right tabular-nums font-medium',
+                              s.total_pending > 0 ? 'text-amber-400' : 'text-slate-400'
+                            )}
+                          >
+                            ₹{s.total_pending.toLocaleString('en-IN')}
+                          </td>
+                          <td className={cn(dash.td, 'text-center')}>
+                            {(() => {
+                              if (s.detailed_status?.academic_year_complete) {
+                                return (
+                                  <span
+                                    className={cn(
+                                      dash.badge,
+                                      'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                    )}
+                                    title="All academic year fees have been paid"
+                                  >
+                                    All Paid
+                                  </span>
+                                );
+                              } else if (s.detailed_status?.current_month_paid) {
+                                return (
+                                  <span
+                                    className={cn(
+                                      dash.badge,
+                                      'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
+                                    )}
+                                    title={`${MONTHS[s.detailed_status.current_month]} fees are paid, but some previous months may be pending`}
+                                  >
+                                    {MONTHS[s.detailed_status.current_month]} Paid
+                                  </span>
+                                );
+                              } else if (s.status === 'fully_paid') {
+                                return (
+                                  <span
+                                    className={cn(dash.badge, dash.badgeTeal)}
+                                    title="All dues up to selected month are paid"
+                                  >
+                                    Paid
+                                  </span>
+                                );
+                              } else if (s.status === 'partial') {
+                                return (
+                                  <span
+                                    className={cn(dash.badge, dash.badgeAmber)}
+                                    title="Some fees have been paid but there are still pending dues"
+                                  >
+                                    Partial
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span
+                                    className={cn(dash.badge, dash.badgeRed)}
+                                    title="No payments received yet"
+                                  >
+                                    Unpaid
+                                  </span>
+                                );
+                              }
+                            })()}
+                          </td>
+                          <td className={dash.td} onClick={(e) => e.stopPropagation()}>
+                            {s.fees.some((f) => f.balance > 0) && (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPayAllStudent(s);
+                                    setPayMode('monthly');
+                                  }}
+                                  className={dash.link}
+                                >
+                                  Pay
+                                </button>
+                                {s.detailed_status?.current_month_paid && !s.detailed_status?.academic_year_complete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPayAllStudent(s);
+                                      setPayMode('yearly');
+                                    }}
+                                    className="text-sm font-medium text-amber-400 transition hover:text-amber-300"
+                                    title="Complete academic year payment with potential discounts"
+                                  >
+                                    Complete Year
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </motion.tr>
+                        {expandedRow === s.student_id && (
+                          <tr className="border-b border-white/5 bg-white/[0.02]">
+                            <td colSpan={7} className="px-4 py-4">
+                              <div className="space-y-2 pl-2 md:pl-6">
+                                <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                  Fee breakdown
+                                </div>
+                                {(() => {
+                                  const unpaidFees = s.fees.filter((f) => f.balance > 0);
+                                  if (unpaidFees.length === 0) {
+                                    return <span className="text-sm text-teal-400">All paid</span>;
+                                  }
+                                  return Object.entries(
+                                    unpaidFees.reduce((acc, f) => {
+                                      const key = f.month && f.year ? `${f.year}-${String(f.month).padStart(2, '0')}` : 'other';
+                                      (acc[key] = acc[key] || []).push(f);
+                                      return acc;
+                                    }, {} as Record<string, typeof s.fees>)
+                                  )
+                                    .sort(([a], [b]) => (a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)))
+                                    .map(([key, monthFees]) => (
+                                      <div key={key}>
+                                        {key !== 'other' && (
+                                          <div className="mb-1.5 mt-2 border-b border-white/10 pb-1 text-xs font-semibold text-slate-500 first:mt-0">
+                                            {MONTHS[parseInt(key.split('-')[1])]} {key.split('-')[0]}
+                                          </div>
+                                        )}
+                                        {monthFees.map((f) => (
+                                          <div key={f.student_fee_id} className="flex flex-wrap items-center gap-2 text-sm">
+                                            <span className="text-slate-400">{f.fee_type}:</span>
+                                            <span className="text-amber-400">₹{f.balance.toLocaleString('en-IN')} pending</span>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handlePrintReceipt(f.student_fee_id, s.student_name);
+                                              }}
+                                              className="text-xs text-teal-400 underline-offset-4 hover:text-teal-300 hover:underline"
+                                            >
+                                              Print
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDownloadReceipt(f.student_fee_id, s.student_name);
+                                              }}
+                                              className="text-xs text-slate-500 underline-offset-4 hover:text-slate-300 hover:underline"
+                                            >
+                                              Download
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ));
+                                })()}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </GlassCard>
 
       {payAllStudent && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto my-4">
-            <h2 className="text-lg font-semibold mb-4">Record payment – {payAllStudent.student_name}</h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Choose monthly, yearly, or all pending (includes arrears). Amount is calculated from selected fee types.
-            </p>
-            <div className="mb-4 flex flex-wrap gap-3 p-3 bg-teal-50 rounded-lg border border-teal-100">
-              <label className="flex items-center gap-2 cursor-pointer">
+        <DashboardModal
+          wide
+          title={`Record payment – ${payAllStudent.student_name}`}
+          subtitle="Choose monthly, yearly, or all pending (includes arrears). Amount is calculated from selected fee types."
+          onClose={closePayModal}
+        >
+          <div className={cn(dash.innerPanel, 'mb-4 border-teal-500/20 bg-teal-500/5')}>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex cursor-pointer items-center gap-2">
                 <input
                   type="radio"
                   name="payMode"
                   checked={payMode === 'monthly'}
                   onChange={() => setPayMode('monthly')}
-                  className="rounded-full border-gray-300"
+                  className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                 />
-                <span className="text-sm font-medium text-teal-800">Monthly</span>
+                <span className="text-sm font-medium text-teal-200">Monthly</span>
               </label>
-              {/* Always show yearly option if student exists and current month is paid but academic year is not complete */}
               {payAllStudent && payAllStudent.detailed_status?.current_month_paid && !payAllStudent.detailed_status?.academic_year_complete && (
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex cursor-pointer items-center gap-2">
                   <input
                     type="radio"
                     name="payMode"
                     checked={payMode === 'yearly'}
                     onChange={() => setPayMode('yearly')}
-                    className="rounded-full border-gray-300"
+                    className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                   />
-                  <span className="text-sm font-medium text-teal-800">Yearly</span>
-                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">Complete Year</span>
+                  <span className="text-sm font-medium text-teal-200">Yearly</span>
+                  <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">
+                    Complete Year
+                  </span>
                 </label>
               )}
-              {/* Show yearly option for any student who has paid current month */}
               {payAllStudent && payAllStudent.detailed_status?.current_month_paid && (
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex cursor-pointer items-center gap-2">
                   <input
                     type="radio"
                     name="payMode"
                     checked={payMode === 'yearly'}
                     onChange={() => setPayMode('yearly')}
-                    className="rounded-full border-gray-300"
+                    className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                   />
-                  <span className="text-sm font-medium text-teal-800">Yearly</span>
-                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">Current Month Paid</span>
+                  <span className="text-sm font-medium text-teal-200">Yearly</span>
+                  <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">
+                    Current Month Paid
+                  </span>
                 </label>
               )}
-              {/* Show yearly option for any student regardless of academic year completion */}
               {payAllStudent && (
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex cursor-pointer items-center gap-2">
                   <input
                     type="radio"
                     name="payMode"
                     checked={payMode === 'yearly'}
                     onChange={() => setPayMode('yearly')}
-                    className="rounded-full border-gray-300"
+                    className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                   />
-                  <span className="text-sm font-medium text-teal-800">Yearly</span>
+                  <span className="text-sm font-medium text-teal-200">Yearly</span>
                 </label>
               )}
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex cursor-pointer items-center gap-2">
                 <input
                   type="radio"
                   name="payMode"
                   checked={payMode === 'all_pending'}
                   onChange={() => setPayMode('all_pending')}
-                  className="rounded-full border-gray-300"
+                  className="border-white/20 bg-white/10 text-teal-500 accent-teal-500"
                 />
-                <span className="text-sm font-medium text-teal-800">All pending</span>
+                <span className="text-sm font-medium text-teal-200">All pending</span>
               </label>
             </div>
-            
-            {/* Show explanatory message for yearly option */}
-            {payMode === 'yearly' && payAllStudent.detailed_status?.current_month_paid && !payAllStudent.detailed_status?.academic_year_complete && (
-              <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
-                <div className="text-sm text-amber-800">
-                  <strong>Complete Academic Year Payment:</strong> Pay the remaining months of the academic year at once. 
-                  This may include discounts for yearly payment and helps secure the student&apos;s fees for the entire year.
-                </div>
-              </div>
-            )}
-            {/* Fee type selection - always show when student is selected */}
-            {payAllStudent && (
-              <div className="mb-4 p-3 rounded-lg border border-gray-200 bg-gray-50">
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Fee types for this payment</div>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {classFeeOptions.map((f) => {
-                    const checked = selectedFeeStructureIds.includes(f.id);
-                    return (
-                      <label key={f.id} className="flex items-center justify-between gap-3 text-sm cursor-pointer">
-                        <span className="text-gray-700">
-                          {f.fee_type_name} {f.billing_period_display ? `(${f.billing_period_display})` : ''}
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            setSelectedFeeStructureIds((prev) =>
-                              checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
-                            )
-                          }
-                          className="rounded border-gray-300"
-                        />
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="mb-4 p-3 bg-teal-50 rounded-lg border border-teal-100">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Breakup</div>
-              <div className="max-h-40 overflow-y-auto space-y-1.5 text-sm">
-                {payMode === 'all_pending' ? (
-                  payAllStudent.fees.filter((f) => f.balance > 0).length === 0 ? (
-                    <span className="text-teal-600">No pending fees</span>
-                  ) : (
-                    payAllStudent.fees
-                      .filter((f) => f.balance > 0)
-                      .sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0))
-                      .map((f) => (
-                        <div key={f.student_fee_id} className="flex justify-between">
-                          <span className="text-gray-700">{f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}</span>
-                          <span className="text-amber-600 font-medium">₹{f.balance.toLocaleString('en-IN')}</span>
-                        </div>
-                      ))
-                  )
-                ) : !paymentPreview ? (
-                  <span className="text-gray-500">Loading...</span>
-                ) : payMode === 'monthly' ? (
-                  paymentPreview.monthly.breakdown.length === 0 ? (
-                    <span className="text-teal-600">No fees for {MONTHS[month]} {year}</span>
-                  ) : (
-                    paymentPreview.monthly.breakdown.map((f, i) => (
-                      <div key={i} className="flex justify-between">
-                        <span className="text-gray-700">{f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}</span>
-                        <span className="text-amber-600 font-medium">₹{f.balance.toLocaleString('en-IN')}</span>
-                      </div>
-                    ))
-                  )
-                ) : (
-                  paymentPreview.yearly.breakdown.length === 0 ? (
-                    <span className="text-teal-600">No fees for full year</span>
-                  ) : (
-                    (() => {
-                      const byFeeType = paymentPreview.yearly.breakdown.reduce((acc, f) => {
-                        const key = f.fee_type;
-                        if (!acc[key]) acc[key] = { items: [], totalBefore: 0, totalAfter: 0 };
-                        acc[key].items.push(f);
-                        acc[key].totalBefore += f.balance;
-                        acc[key].totalAfter += f.after_discount ?? f.balance;
-                        return acc;
-                      }, {} as Record<string, { items: typeof paymentPreview.yearly.breakdown; totalBefore: number; totalAfter: number }>);
-                      return Object.entries(byFeeType).map(([feeType, { items, totalBefore, totalAfter }]) => {
-                        const hasDiscount = totalBefore > totalAfter;
-                        const discountPct = hasDiscount && totalBefore > 0 ? Math.round(((totalBefore - totalAfter) / totalBefore) * 100) : 0;
-                        return (
-                          <div key={feeType} className="border-b border-teal-100 last:border-0 pb-1 last:pb-0">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedFeeType((prev) => (prev === feeType ? null : feeType))}
-                              className="w-full flex justify-between items-center text-left py-1 hover:bg-teal-100/50 rounded px-1 -mx-1"
-                            >
-                              <span className="font-medium text-gray-800 flex items-center gap-1">
-                                <span className={`inline-block transition-transform text-xs ${expandedFeeType === feeType ? 'rotate-90' : ''}`}>▶</span>
-                                {feeType}
-                              </span>
-                              <span className="text-right">
-                                {hasDiscount ? (
-                                  <>
-                                    <span className="text-gray-500 line-through text-sm mr-1">₹{totalBefore.toLocaleString('en-IN')}</span>
-                                    <span className="text-emerald-600 font-medium">₹{totalAfter.toLocaleString('en-IN')}</span>
-                                    <span className="text-emerald-600 text-xs ml-1">({discountPct}% off)</span>
-                                  </>
-                                ) : (
-                                  <span className="text-amber-600 font-medium">₹{totalAfter.toLocaleString('en-IN')}</span>
-                                )}
-                              </span>
-                            </button>
-                            {expandedFeeType === feeType && (
-                              <div className="ml-4 mt-1 space-y-0.5 pl-2 border-l-2 border-teal-200">
-                                {items.sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0)).map((f, i) => {
-                                  const itemHasDiscount = (f.after_discount ?? f.balance) < f.balance;
-                                  const itemPct = f.discount_percent ?? (f.balance > 0 ? Math.round(((f.balance - (f.after_discount ?? f.balance)) / f.balance) * 100) : 0);
-                                  return (
-                                    <div key={i} className="flex justify-between text-sm text-gray-600">
-                                      <span>{f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}</span>
-                                      {itemHasDiscount ? (
-                                        <span>
-                                          <span className="line-through text-gray-400 mr-1">₹{f.balance.toLocaleString('en-IN')}</span>
-                                          <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
-                                          <span className="text-emerald-600 text-xs ml-1">({itemPct}% off)</span>
-                                        </span>
-                                      ) : (
-                                        <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      });
-                    })()
-                  )
-                )}
-              </div>
-              <div className="pt-2 mt-2 border-t border-teal-200 space-y-1">
-                {payMode === 'all_pending' ? (
-                  <div className="flex justify-between font-semibold text-teal-700">
-                    <span>All pending (up to {MONTHS[month]} {year})</span>
-                    <span>₹{payAllStudent.total_pending.toLocaleString('en-IN')}</span>
-                  </div>
-                ) : paymentPreview ? (
-                  payMode === 'monthly' ? (
-                    <div className="flex justify-between font-semibold text-teal-700">
-                      <span>{MONTHS[month]} {year} only</span>
-                      <span>₹{paymentPreview.monthly.amount.toLocaleString('en-IN')}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className={`flex justify-between ${(paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount ? 'text-sm text-gray-600' : 'font-semibold text-teal-700'}`}>
-                        <span>Full academic year (all months)</span>
-                        <span>₹{(paymentPreview.yearly.amount_before_discount ?? paymentPreview.yearly.amount).toLocaleString('en-IN')}</span>
-                      </div>
-                      {(paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount && (
-                        <div className="flex justify-between font-semibold text-teal-700">
-                          <span>Discounted amount to pay</span>
-                          <span>₹{paymentPreview.yearly.amount.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                    </>
-                  )
-                ) : null}
+          </div>
+
+          {payMode === 'yearly' && payAllStudent.detailed_status?.current_month_paid && !payAllStudent.detailed_status?.academic_year_complete && (
+            <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3">
+              <div className="text-sm text-amber-200">
+                <strong>Complete Academic Year Payment:</strong> Pay the remaining months of the academic year at once. This may
+                include discounts for yearly payment and helps secure the student&apos;s fees for the entire year.
               </div>
             </div>
-            <form onSubmit={handlePayAll} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input
-                  type="date"
-                  value={paymentForm.payment_date}
-                  onChange={(e) => setPaymentForm((f) => ({ ...f, payment_date: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                  required
-                />
+          )}
+          {payAllStudent && (
+            <div className={cn(dash.innerPanel, 'mb-4')}>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Fee types for this payment</div>
+              <div className="max-h-40 space-y-2 overflow-y-auto">
+                {classFeeOptions.map((f) => {
+                  const checked = selectedFeeStructureIds.includes(f.id);
+                  return (
+                    <label key={f.id} className="flex cursor-pointer items-center justify-between gap-3 text-sm text-slate-300">
+                      <span>
+                        {f.fee_type_name} {f.billing_period_display ? `(${f.billing_period_display})` : ''}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setSelectedFeeStructureIds((prev) =>
+                            checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                          )
+                        }
+                        className="rounded border-white/20 bg-white/10 accent-teal-500"
+                      />
+                    </label>
+                  );
+                })}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mode</label>
-                <select
-                  value={paymentForm.payment_mode}
-                  onChange={(e) => setPaymentForm((f) => ({ ...f, payment_mode: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="Online">Online (Razorpay)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <input
-                  value={paymentForm.notes}
-                  onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" disabled={saving || (payMode !== 'all_pending' && !paymentPreview)} className="px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
-                  {saving ? 'Processing...' : payMode === 'all_pending' ? `Pay ₹${payAllStudent.total_pending.toLocaleString('en-IN')}` : paymentPreview ? (payMode === 'yearly' ? `Pay ₹${paymentPreview.yearly.amount.toLocaleString('en-IN')}` : `Pay ₹${paymentPreview.monthly.amount.toLocaleString('en-IN')}`) : 'Loading...'}
-                </button>
-                <button type="button" onClick={() => { setPayAllStudent(null); setPayMode('monthly'); }} className="px-4 py-2.5 text-gray-600 hover:text-gray-800">
-                  Cancel
-                </button>
-              </div>
-            </form>
+            </div>
+          )}
+          <div className={cn(dash.innerPanel, 'mb-4 border-teal-500/20 bg-teal-500/5')}>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Breakup</div>
+            <div className="max-h-40 space-y-1.5 overflow-y-auto text-sm">
+              {payMode === 'all_pending' ? (
+                payAllStudent.fees.filter((f) => f.balance > 0).length === 0 ? (
+                  <span className="text-teal-400">No pending fees</span>
+                ) : (
+                  payAllStudent.fees
+                    .filter((f) => f.balance > 0)
+                    .sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0))
+                    .map((f) => (
+                      <div key={f.student_fee_id} className="flex justify-between gap-4">
+                        <span className="text-slate-300">
+                          {f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}
+                        </span>
+                        <span className="font-medium text-amber-400">₹{f.balance.toLocaleString('en-IN')}</span>
+                      </div>
+                    ))
+                )
+              ) : !paymentPreview ? (
+                <span className="text-slate-500">Loading...</span>
+              ) : payMode === 'monthly' ? (
+                paymentPreview.monthly.breakdown.length === 0 ? (
+                  <span className="text-teal-400">No fees for {MONTHS[month]} {year}</span>
+                ) : (
+                  paymentPreview.monthly.breakdown.map((f, i) => (
+                    <div key={i} className="flex justify-between gap-4">
+                      <span className="text-slate-300">
+                        {f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}
+                      </span>
+                      <span className="font-medium text-amber-400">₹{f.balance.toLocaleString('en-IN')}</span>
+                    </div>
+                  ))
+                )
+              ) : paymentPreview.yearly.breakdown.length === 0 ? (
+                <span className="text-teal-400">No fees for full year</span>
+              ) : (
+                (() => {
+                  const byFeeType = paymentPreview.yearly.breakdown.reduce((acc, f) => {
+                    const key = f.fee_type;
+                    if (!acc[key]) acc[key] = { items: [], totalBefore: 0, totalAfter: 0 };
+                    acc[key].items.push(f);
+                    acc[key].totalBefore += f.balance;
+                    acc[key].totalAfter += f.after_discount ?? f.balance;
+                    return acc;
+                  }, {} as Record<string, { items: typeof paymentPreview.yearly.breakdown; totalBefore: number; totalAfter: number }>);
+                  return Object.entries(byFeeType).map(([feeType, { items, totalBefore, totalAfter }]) => {
+                    const hasDiscount = totalBefore > totalAfter;
+                    const discountPct = hasDiscount && totalBefore > 0 ? Math.round(((totalBefore - totalAfter) / totalBefore) * 100) : 0;
+                    return (
+                      <div key={feeType} className="border-b border-teal-500/15 pb-1 last:border-0 last:pb-0">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedFeeType((prev) => (prev === feeType ? null : feeType))}
+                          className="-mx-1 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left transition hover:bg-white/10"
+                        >
+                          <span className="flex items-center gap-1 font-medium text-slate-200">
+                            <span
+                              className={`inline-block text-xs transition-transform ${expandedFeeType === feeType ? 'rotate-90' : ''}`}
+                            >
+                              ▶
+                            </span>
+                            {feeType}
+                          </span>
+                          <span className="text-right">
+                            {hasDiscount ? (
+                              <>
+                                <span className="mr-1 text-sm text-slate-500 line-through">₹{totalBefore.toLocaleString('en-IN')}</span>
+                                <span className="font-medium text-emerald-400">₹{totalAfter.toLocaleString('en-IN')}</span>
+                                <span className="ml-1 text-xs text-emerald-400">({discountPct}% off)</span>
+                              </>
+                            ) : (
+                              <span className="font-medium text-amber-400">₹{totalAfter.toLocaleString('en-IN')}</span>
+                            )}
+                          </span>
+                        </button>
+                        {expandedFeeType === feeType && (
+                          <div className="ml-4 mt-1 space-y-0.5 border-l border-teal-500/30 pl-2">
+                            {items
+                              .sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0))
+                              .map((f, i) => {
+                                const itemHasDiscount = (f.after_discount ?? f.balance) < f.balance;
+                                const itemPct =
+                                  f.discount_percent ??
+                                  (f.balance > 0 ? Math.round(((f.balance - (f.after_discount ?? f.balance)) / f.balance) * 100) : 0);
+                                return (
+                                  <div key={i} className="flex justify-between text-sm text-slate-400">
+                                    <span>{f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}</span>
+                                    {itemHasDiscount ? (
+                                      <span>
+                                        <span className="mr-1 text-slate-500 line-through">₹{f.balance.toLocaleString('en-IN')}</span>
+                                        <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
+                                        <span className="ml-1 text-xs text-emerald-400">({itemPct}% off)</span>
+                                      </span>
+                                    ) : (
+                                      <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()
+              )}
+            </div>
+            <div className="mt-3 space-y-1 border-t border-teal-500/20 pt-2">
+              {payMode === 'all_pending' ? (
+                <div className="flex justify-between font-semibold text-teal-300">
+                  <span>All pending (up to {MONTHS[month]} {year})</span>
+                  <span>₹{payAllStudent.total_pending.toLocaleString('en-IN')}</span>
+                </div>
+              ) : paymentPreview ? (
+                payMode === 'monthly' ? (
+                  <div className="flex justify-between font-semibold text-teal-300">
+                    <span>
+                      {MONTHS[month]} {year} only
+                    </span>
+                    <span>₹{paymentPreview.monthly.amount.toLocaleString('en-IN')}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className={cn(
+                        'flex justify-between',
+                        (paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount
+                          ? 'text-sm text-slate-400'
+                          : 'font-semibold text-teal-300'
+                      )}
+                    >
+                      <span>Full academic year (all months)</span>
+                      <span>₹{(paymentPreview.yearly.amount_before_discount ?? paymentPreview.yearly.amount).toLocaleString('en-IN')}</span>
+                    </div>
+                    {(paymentPreview.yearly.amount_before_discount ?? 0) > paymentPreview.yearly.amount && (
+                      <div className="flex justify-between font-semibold text-teal-300">
+                        <span>Discounted amount to pay</span>
+                        <span>₹{paymentPreview.yearly.amount.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                  </>
+                )
+              ) : null}
+            </div>
           </div>
-        </div>
+          <form onSubmit={handlePayAll} className="space-y-4">
+            <div>
+              <label className={dash.label}>Date</label>
+              <input
+                type="date"
+                value={paymentForm.payment_date}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, payment_date: e.target.value }))}
+                className={dash.field}
+                required
+              />
+            </div>
+            <div>
+              <label className={dash.label}>Mode</label>
+              <select
+                value={paymentForm.payment_mode}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, payment_mode: e.target.value }))}
+                className={dash.field}
+              >
+                <option value="Cash">Cash</option>
+                <option value="Online">Online (Razorpay)</option>
+              </select>
+            </div>
+            <div>
+              <label className={dash.label}>Notes</label>
+              <input
+                value={paymentForm.notes}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
+                className={dash.field}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button
+                type="submit"
+                disabled={saving || (payMode !== 'all_pending' && !paymentPreview)}
+                className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/25 hover:from-teal-400 hover:to-cyan-400 disabled:opacity-50"
+              >
+                {saving
+                  ? 'Processing...'
+                  : payMode === 'all_pending'
+                    ? `Pay ₹${payAllStudent.total_pending.toLocaleString('en-IN')}`
+                    : paymentPreview
+                      ? payMode === 'yearly'
+                        ? `Pay ₹${paymentPreview.yearly.amount.toLocaleString('en-IN')}`
+                        : `Pay ₹${paymentPreview.monthly.amount.toLocaleString('en-IN')}`
+                      : 'Loading...'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closePayModal}
+                className="rounded-xl border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </DashboardModal>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -1,22 +1,124 @@
 @import "tailwindcss";
 
 :root {
-  --background: #faf9f7;
-  --foreground: #1a1a1a;
-  --primary: #0d9488;
-  --primary-dark: #0f766e;
-  --accent: #f59e0b;
-  --card: #ffffff;
-  --border: #e5e7eb;
+  --background: #0a0f1a;
+  --foreground: #e2e8f0;
+  --primary: #2dd4bf;
+  --primary-dark: #14b8a6;
+  --accent: #fbbf24;
+  --card: rgba(255, 255, 255, 0.05);
+  --border: rgba(255, 255, 255, 0.1);
+  --muted: #94a3b8;
+  --ring: rgba(45, 212, 191, 0.4);
+
+  --dash-mesh-bg: #0a0f1a;
+  --dash-sidebar: rgba(13, 19, 36, 0.95);
+  --dash-glass-bg: rgba(255, 255, 255, 0.05);
+  --dash-glass-bg-strong: rgba(255, 255, 255, 0.08);
+  --dash-glass-border: rgba(255, 255, 255, 0.1);
+  --dash-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --dash-text-title: #ffffff;
+  --dash-text-body: #cbd5e1;
+  --dash-text-muted: #64748b;
+  --dash-input-bg: rgba(255, 255, 255, 0.05);
+  --dash-hover: rgba(255, 255, 255, 0.05);
+  --dash-row-hover: rgba(255, 255, 255, 0.04);
+  --dash-grid-line: rgba(45, 212, 191, 0.06);
+  --dash-gradient-from: #2dd4bf;
+  --dash-gradient-via: #67e8f9;
+  --dash-gradient-to: #2dd4bf;
+  --dash-nav-active-text: #99f6e4;
+  --dash-nav-text: #94a3b8;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--muted);
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+.glass-panel {
+  @apply rounded-2xl backdrop-blur-xl;
+  background: var(--dash-glass-bg);
+  border: 1px solid var(--dash-glass-border);
+}
+
+.glass-panel-strong {
+  @apply rounded-2xl backdrop-blur-2xl;
+  background: var(--dash-glass-bg-strong);
+  border: 1px solid var(--dash-glass-border);
+  box-shadow: var(--dash-glass-shadow);
+}
+
+.text-gradient {
+  background: linear-gradient(
+    to right,
+    var(--dash-gradient-from),
+    var(--dash-gradient-via),
+    var(--dash-gradient-to)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Cursor UI rules ───────────────────────────── */
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  label[for],
+  select:not(:disabled),
+  summary,
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="submit"],
+  input[type="button"],
+  input[type="reset"],
+  [data-clickable="true"] {
+    cursor: pointer;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]):not(:disabled),
+  textarea:not(:disabled) {
+    cursor: text;
+  }
+
+  button:disabled,
+  [disabled]:not(input):not(textarea):not(select),
+  [aria-disabled="true"],
+  fieldset:disabled * {
+    cursor: not-allowed;
+  }
+
+  [aria-busy="true"],
+  .cursor-wait {
+    cursor: wait;
+  }
 }

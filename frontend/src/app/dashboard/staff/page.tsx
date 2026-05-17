@@ -1,7 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { UserCog, Plus, KeyRound } from 'lucide-react';
 import { createStaffUser, deleteStaffUser, forgotPassword, getStaffUsers, updateStaffUser } from '@/lib/api';
+import { PageHeader } from '@/components/dashboard/page-header';
+import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
+import { InlineLoading } from '@/components/dashboard/loading-state';
+import { Button } from '@/components/ui/button';
+import { dash } from '@/lib/dashboard-ui';
+import { cn } from '@/lib/utils';
 
 interface StaffUser {
   id: number;
@@ -126,73 +134,102 @@ export default function StaffPage() {
   };
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Staff Login</h1>
-      <p className="text-gray-600 mb-8">Create and manage staff logins for your school. Staff can sign in with role-based access.</p>
+    <PageShell>
+      <PageHeader
+        icon={UserCog}
+        eyebrow="Access control"
+        title="Staff"
+        highlight="Logins"
+        subtitle="Create and manage staff logins for your school. Staff can sign in with role-based access."
+      />
 
-      <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm mb-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Add staff login</h2>
-        <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <input value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} placeholder="Username" className="px-4 py-2 rounded-lg border border-gray-200" required />
-          <input value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="First name" className="px-4 py-2 rounded-lg border border-gray-200" />
-          <input value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} placeholder="Last name" className="px-4 py-2 rounded-lg border border-gray-200" />
-          <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="Email" className="px-4 py-2 rounded-lg border border-gray-200" />
-          <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="Phone" className="px-4 py-2 rounded-lg border border-gray-200" />
-          <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as 'accountant' | 'staff' }))} className="px-4 py-2 rounded-lg border border-gray-200">
+      <GlassCard delay={0.05}>
+        <motion.div className="border-b border-white/10 px-6 py-4">
+          <h2 className={dash.sectionTitle}>Add staff login</h2>
+        </motion.div>
+        <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 p-6 md:grid-cols-3">
+          <input value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} placeholder="Username" className={dash.field} required />
+          <input value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="First name" className={dash.field} />
+          <input value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} placeholder="Last name" className={dash.field} />
+          <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="Email" className={dash.field} />
+          <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="Phone" className={dash.field} />
+          <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as 'accountant' | 'staff' }))} className={dash.field}>
             <option value="staff">Staff</option>
             <option value="accountant">Accountant</option>
           </select>
-          <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Password" className="px-4 py-2 rounded-lg border border-gray-200" required />
-          <input type="password" value={form.password2} onChange={(e) => setForm((f) => ({ ...f, password2: e.target.value }))} placeholder="Confirm password" className="px-4 py-2 rounded-lg border border-gray-200" required />
-          <button type="submit" disabled={saving} className="px-6 py-2 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
-            {saving ? 'Saving...' : 'Create Staff'}
-          </button>
+          <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Password" className={dash.field} required />
+          <input type="password" value={form.password2} onChange={(e) => setForm((f) => ({ ...f, password2: e.target.value }))} placeholder="Confirm password" className={dash.field} required />
+          <Button type="submit" disabled={saving} className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0 md:col-span-3 md:w-fit">
+            <Plus className="mr-2 h-4 w-4" />
+            {saving ? 'Saving…' : 'Create Staff'}
+          </Button>
         </form>
-      </div>
+      </GlassCard>
 
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <GlassCard delay={0.1}>
         {loading ? (
-          <div className="p-8 text-center text-gray-500">Loading...</div>
+          <InlineLoading />
         ) : staff.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">No staff logins yet.</div>
+          <p className={dash.empty}>No staff logins yet.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="text-left py-3 px-4">Username</th>
-                <th className="text-left py-3 px-4">Name</th>
-                <th className="text-left py-3 px-4">Role</th>
-                <th className="text-left py-3 px-4">Status</th>
-                <th className="text-left py-3 px-4">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {staff.map((u) => (
-                <tr key={u.id} className="border-b border-gray-50">
-                  <td className="py-3 px-4">{u.username}</td>
-                  <td className="py-3 px-4">{u.first_name} {u.last_name}</td>
-                  <td className="py-3 px-4">
-                    <select
-                      value={u.role}
-                      onChange={(e) => handleRoleChange(u, e.target.value as 'accountant' | 'staff')}
-                      className="px-2 py-1 rounded border border-gray-200"
-                    >
-                      <option value="staff">Staff</option>
-                      <option value="accountant">Accountant</option>
-                    </select>
-                  </td>
-                  <td className="py-3 px-4">{u.is_active ? 'Active' : 'Inactive'}</td>
-                  <td className="py-3 px-4 flex gap-3">
-                    <button onClick={() => handleToggleActive(u)} className="text-teal-600 hover:text-teal-700">{u.is_active ? 'Disable' : 'Enable'}</button>
-                    <button onClick={() => handleGenerateResetLink(u)} className="text-indigo-600 hover:text-indigo-700">Reset Link</button>
-                    <button onClick={() => handleDelete(u)} className="text-red-600 hover:text-red-700">Delete</button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className={dash.table}>
+              <thead className={dash.thead}>
+                <tr>
+                  <th className={dash.th}>Username</th>
+                  <th className={dash.th}>Name</th>
+                  <th className={dash.th}>Role</th>
+                  <th className={dash.th}>Status</th>
+                  <th className={dash.th}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {staff.map((u, i) => (
+                  <motion.tr
+                    key={u.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.1 + i * 0.03 }}
+                    className={dash.tr}
+                  >
+                    <td className={cn(dash.td, 'font-medium text-slate-200')}>{u.username}</td>
+                    <td className={dash.td}>{u.first_name} {u.last_name}</td>
+                    <td className={dash.td}>
+                      <select
+                        value={u.role}
+                        onChange={(e) => handleRoleChange(u, e.target.value as 'accountant' | 'staff')}
+                        className={dash.fieldSm}
+                      >
+                        <option value="staff">Staff</option>
+                        <option value="accountant">Accountant</option>
+                      </select>
+                    </td>
+                    <td className={dash.td}>
+                      <span className={cn(dash.badge, u.is_active ? dash.badgeTeal : dash.badgeAmber)}>
+                        {u.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className={dash.td}>
+                      <motion.div className="flex flex-wrap gap-3">
+                        <button type="button" onClick={() => handleToggleActive(u)} className={dash.link}>
+                          {u.is_active ? 'Disable' : 'Enable'}
+                        </button>
+                        <button type="button" onClick={() => handleGenerateResetLink(u)} className={cn(dash.link, 'inline-flex items-center gap-1')}>
+                          <KeyRound className="h-3.5 w-3.5" />
+                          Reset link
+                        </button>
+                        <button type="button" onClick={() => handleDelete(u)} className={dash.linkDanger}>
+                          Delete
+                        </button>
+                      </motion.div>
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
-    </div>
+      </GlassCard>
+    </PageShell>
   );
 }

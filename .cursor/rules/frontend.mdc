@@ -1,0 +1,181 @@
+---
+description: SchoolFee Pro — Next.js frontend (UI, pages, API client)
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# Frontend app (`frontend/`)
+
+Applies only when editing files under **`frontend/`**. Do not use these rules for `backend/`.
+
+## Stack
+
+- Next.js 16 App Router, React 19, TypeScript, Tailwind CSS v4
+- UI: [shadcn/ui](https://ui.shadcn.com/) primitives in `src/components/ui/`
+- Motion: **Framer Motion** (`framer-motion`) for dashboard animations
+- Icons: **Lucide** (`lucide-react`)
+- Auth: `src/contexts/AuthContext.tsx`, tokens via `src/lib/api.ts`
+- Env: `NEXT_PUBLIC_API_URL` → `src/lib/env.ts`
+
+## Structure
+
+```
+frontend/src/
+├── app/
+│   ├── globals.css          # Theme tokens, glass utilities, cursor defaults
+│   ├── dashboard/           # Authenticated shell (dark “Command Center” UI)
+│   ├── login, register, …   # Public auth (may still be light — match dashboard when touching)
+│   └── pay/[invoiceId]
+├── components/
+│   ├── ui/                  # shadcn primitives — extend, don’t duplicate
+│   └── dashboard/           # MeshBackground, StatCard, AnimatedNumber, …
+├── contexts/
+└── lib/api.ts
+```
+
+---
+
+## Design system (required for all new UI)
+
+**Aesthetic:** Dark glass UI — deep space background (`#0a0f1a`), teal/cyan accents, subtle motion. Use CSS variables (`--dash-*`) and `glass-panel` — never hardcode light-theme cards (`bg-white`, `text-gray-800`) on dashboard pages.
+
+### Tokens (`globals.css` `:root`)
+
+| Token | Value / usage |
+|-------|----------------|
+| `--background` | `#0a0f1a` — page/shell bg |
+| `--foreground` | `#e2e8f0` — body text |
+| `--primary` | `#2dd4bf` — teal accent |
+| `--accent` | `#fbbf24` — warnings / pending |
+| `--card` | `rgba(255,255,255,0.05)` |
+| `--border` | `rgba(255,255,255,0.1)` |
+| `--muted` | `#94a3b8` — secondary text |
+
+### Utility classes (prefer these over one-off styles)
+
+| Class | Use for |
+|-------|---------|
+| `glass-panel` | Standard content card (tables, lists, sections) |
+| `glass-panel-strong` | Hero / emphasis blocks (e.g. collection momentum) |
+| `text-gradient` | Brand highlight on headings (“Pro”, “Center”) |
+| `animate-shimmer` | Loading placeholders (with `Skeleton`) |
+
+### Color semantics
+
+| Meaning | Tailwind |
+|---------|----------|
+| Success / collected | `text-teal-300`, `text-teal-400`, `bg-teal-500/10` |
+| Pending / warning | `text-amber-300`, `text-amber-400`, `bg-amber-500/10` |
+| Info / rate | `text-cyan-300`, cyan gradients |
+| Secondary | `text-slate-400`, `text-slate-500` |
+| Primary text | `text-slate-200`, `text-white` |
+| Borders / dividers | `border-white/10`, `border-white/5` |
+| Hover surfaces | `hover:bg-white/5`, `hover:bg-white/[0.04]` |
+
+### Typography
+
+- Page title (dashboard): `text-3xl font-bold tracking-tight text-white md:text-4xl` + optional `text-gradient` span
+- Section title: `text-lg font-semibold text-white`
+- Section subtitle: `text-sm text-slate-500`
+- Stat / KPI value: `text-3xl font-bold tabular-nums` + accent color
+- Eyebrow / live label: `text-sm text-teal-400/90` with Lucide icon
+
+### Layout (dashboard)
+
+- Shell: `dashboard/layout.tsx` — fixed sidebar `w-[260px]`, `MeshBackground`, main `ml-[260px] p-8`
+- Sidebar: `bg-[#0d1324]/80 backdrop-blur-2xl border-r border-white/10`
+- Active nav: gradient bg `from-teal-500/20 to-cyan-500/10`, `layoutId="nav-active"` pill on left
+- Content spacing: `space-y-8` between major sections; grids `gap-4` / `gap-6`
+
+### Components — reuse before creating
+
+| Need | Use |
+|------|-----|
+| Button, Input, Dialog, Table, … | `@/components/ui/*` |
+| Page background | `MeshBackground` from `@/components/dashboard/mesh-background` |
+| KPI card | `StatCard` + `AnimatedNumber` |
+| Progress bar | `@/components/ui/progress` |
+| Loading | `@/components/ui/skeleton` or `DashboardSkeleton` pattern |
+| Toasts | `sonner` (`toast.success` / `toast.error`) |
+
+### shadcn/ui usage
+
+- Import from `@/components/ui/…`; override with `className` for dark theme
+- Primary CTA: `rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 … shadow-teal-500/25 border-0`
+- Outline on dark: `border-white/10 bg-white/5 text-slate-300 hover:bg-white/10`
+- Inputs on dark (when added): `bg-white/5 border-white/10 text-slate-200 placeholder:text-slate-500`
+
+### Motion (Framer Motion)
+
+Use on dashboard pages and new interactive blocks — keep subtle and fast.
+
+```tsx
+'use client'
+import { motion } from 'framer-motion'
+
+// Stagger children
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.08 } } }
+
+// Card entrance
+<motion.div
+  initial={{ opacity: 0, y: 24 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+  whileHover={{ y: -4 }}
+/>
+
+// List/table rows: delay by index `0.4 + i * 0.05`
+```
+
+- Nav active indicator: `layoutId="nav-active"` spring transition
+- Prefer `motion.tr` / `motion.div` over animating entire tables
+- **Do not** add motion to every public/auth page unless explicitly redesigning that page
+
+### New dashboard page checklist
+
+1. Wrap content in `motion.div` with stagger or section delays (match `dashboard/page.tsx`)
+2. Use `glass-panel` for main sections
+3. Lucide icons (not emoji) for actions and nav
+4. Currency: `₹` + `.toLocaleString('en-IN')`
+5. Links/actions: teal hover (`text-teal-400 hover:text-teal-300`)
+6. Empty states: centered `text-sm text-slate-500` inside glass panel
+
+### Reference implementation
+
+- Shell: `src/app/dashboard/layout.tsx`
+- Home: `src/app/dashboard/page.tsx`
+- Stat card: `src/components/dashboard/stat-card.tsx`
+- Theme: `src/app/globals.css`
+
+---
+
+## Cursor (mouse) rules
+
+Defaults in `src/app/globals.css`. Use Tailwind only when overriding.
+
+| Element | Cursor |
+|---------|--------|
+| Button, link, nav, clickable row | `pointer` |
+| Checkbox/radio `label` | `pointer` |
+| Input, textarea (enabled) | `text` |
+| Disabled control | `not-allowed` |
+| Loading action | `wait` / `aria-busy="true"` |
+
+`Button` already has `cursor-pointer` and `disabled:cursor-not-allowed`.
+
+---
+
+## API integration
+
+- Add endpoints in `lib/api.ts`; call from pages, not raw `fetch` scattered in components
+- Base path: `/api/` (schools) and `/api/payments/` (Razorpay) — see root `README.md`
+- Handle errors with toast (`sonner`) or inline messages; 401 → login
+
+## Do not
+
+- Put Django or DB logic in the frontend
+- Commit secrets (`.env.local` only)
+- Add `cursor-pointer` on disabled or read-only text
+- Introduce light-theme dashboard cards (`bg-white`, `border-gray-100`, `text-gray-800`) without explicit product decision
+- Duplicate shadcn primitives — extend `components/ui/*` instead
+- Add heavy animation libraries beyond Framer Motion already in the project

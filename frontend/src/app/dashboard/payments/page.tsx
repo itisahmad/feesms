@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { CreditCard, Building2, Users } from 'lucide-react';
 import {
   createParentPaymentIntent,
   createPlatformOrder,
@@ -10,6 +12,11 @@ import {
   verifyParentPayment,
   verifyPlatformPayment,
 } from '@/lib/api';
+import { PageHeader } from '@/components/dashboard/page-header';
+import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
+import { PageLoading } from '@/components/dashboard/loading-state';
+import { Button } from '@/components/ui/button';
+import { dash } from '@/lib/dashboard-ui';
 
 declare global {
   interface Window {
@@ -91,7 +98,7 @@ export default function PaymentsPage() {
         };
         await onSuccess(payload);
       },
-      theme: { color: '#0f766e' },
+      theme: { color: '#14b8a6' },
     });
     rz.open();
   };
@@ -150,76 +157,97 @@ export default function PaymentsPage() {
     }
   };
 
-  if (loading) return <div className="p-12 text-center text-gray-500">Loading payments...</div>;
+  if (loading) return <PageLoading />;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">Payments</h1>
+    <PageShell>
+      <PageHeader
+        icon={CreditCard}
+        eyebrow="Razorpay integration"
+        title="Payments"
+        subtitle="Configure platform billing and parent-to-school fee settlements."
+      />
 
-      <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm space-y-4">
-        <h2 className="text-lg font-semibold">Platform Billing (School pays platform)</h2>
-        <p className="text-sm text-gray-500">This amount is collected into your platform account.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Billing cycle</label>
-            <select
-              value={platformCycle}
-              onChange={(e) => setPlatformCycle(e.target.value as 'monthly' | 'yearly')}
-              className="w-full px-3 py-2 rounded border border-gray-200"
-            >
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly</option>
-            </select>
+      <GlassCard delay={0.05}>
+        <div className="flex items-start gap-3 border-b border-white/10 px-6 py-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20 ring-1 ring-violet-400/30">
+            <Building2 className="h-5 w-5 text-violet-300" />
           </div>
           <div>
-            <label className="block text-sm text-gray-700 mb-1">School Razorpay Route Account ID</label>
+            <h2 className={dash.sectionTitle}>Platform billing</h2>
+            <p className="text-sm text-slate-500">School pays platform — collected into your platform account.</p>
+          </div>
+        </div>
+        <div className="space-y-4 p-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label className={dash.label}>Billing cycle</label>
+              <select value={platformCycle} onChange={(e) => setPlatformCycle(e.target.value as 'monthly' | 'yearly')} className={dash.field}>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <div>
+              <label className={dash.label}>School Razorpay Route Account ID</label>
+              <input
+                value={routeAccountId}
+                onChange={(e) => setRouteAccountId(e.target.value)}
+                className={dash.field}
+                placeholder="acc_xxxxxx (for parent-to-school settlement)"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={handleSaveConfig} disabled={saving} className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0">
+              {saving ? 'Saving…' : 'Save payment config'}
+            </Button>
+            <Button onClick={handlePlatformPay} variant="outline" className="rounded-xl border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200">
+              Pay platform fee
+            </Button>
+          </div>
+          {summary && (
+            <p className="text-sm text-slate-400">
+              Plan: <span className="font-medium text-white">{summary.plan}</span>
+              {' · '}
+              Next monthly: <span className="font-medium text-teal-300">₹{summary.next_monthly_amount}</span>
+            </p>
+          )}
+        </div>
+      </GlassCard>
+
+      <GlassCard delay={0.1}>
+        <div className="flex items-start gap-3 border-b border-white/10 px-6 py-4">
+          <motion.div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-500/20 ring-1 ring-teal-400/30">
+            <Users className="h-5 w-5 text-teal-300" />
+          </motion.div>
+          <div>
+            <h2 className={dash.sectionTitle}>Parent payment</h2>
+            <p className="text-sm text-slate-500">Checkout for one student fee line. Settlement uses Razorpay Route when configured.</p>
+          </div>
+        </div>
+        <div className="space-y-4 p-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input
-              value={routeAccountId}
-              onChange={(e) => setRouteAccountId(e.target.value)}
-              className="w-full px-3 py-2 rounded border border-gray-200"
-              placeholder="acc_xxxxxx (for parent-to-school settlement)"
+              value={parentStudentFeeId}
+              onChange={(e) => setParentStudentFeeId(e.target.value)}
+              className={dash.field}
+              placeholder="Student Fee ID"
+            />
+            <input
+              value={parentAmount}
+              onChange={(e) => setParentAmount(e.target.value)}
+              className={dash.field}
+              placeholder="Amount"
+              type="number"
+              min="0"
+              step="0.01"
             />
           </div>
+          <Button onClick={handleParentPay} className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0">
+            Start parent payment
+          </Button>
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleSaveConfig} disabled={saving} className="px-4 py-2 rounded bg-teal-600 text-white disabled:opacity-50">
-            {saving ? 'Saving...' : 'Save Payment Config'}
-          </button>
-          <button onClick={handlePlatformPay} className="px-4 py-2 rounded bg-amber-500 text-white">
-            Pay Platform Fee
-          </button>
-        </div>
-        {summary && (
-          <div className="text-sm text-gray-600">
-            Plan: <b>{summary.plan}</b> | Next monthly: <b>Rs {summary.next_monthly_amount}</b>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm space-y-4">
-        <h2 className="text-lg font-semibold">Parent Payment (goes to school)</h2>
-        <p className="text-sm text-gray-500">Create a checkout for one student fee line item. Settlement uses Razorpay Route when configured.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input
-            value={parentStudentFeeId}
-            onChange={(e) => setParentStudentFeeId(e.target.value)}
-            className="w-full px-3 py-2 rounded border border-gray-200"
-            placeholder="Student Fee ID"
-          />
-          <input
-            value={parentAmount}
-            onChange={(e) => setParentAmount(e.target.value)}
-            className="w-full px-3 py-2 rounded border border-gray-200"
-            placeholder="Amount"
-            type="number"
-            min="0"
-            step="0.01"
-          />
-        </div>
-        <button onClick={handleParentPay} className="px-4 py-2 rounded bg-teal-600 text-white">
-          Start Parent Payment
-        </button>
-      </div>
-    </div>
+      </GlassCard>
+    </PageShell>
   );
 }

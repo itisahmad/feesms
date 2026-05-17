@@ -1,7 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { ChevronDown, ChevronUp, FileText, Plus } from 'lucide-react';
 import { getFeeTypes, createFeeType, updateFeeType, getFeeStructures, createFeeStructure, updateFeeStructure, deleteFeeStructure, getClasses, getSchool } from '@/lib/api';
+import { PageHeader } from '@/components/dashboard/page-header';
+import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
+import { InlineLoading, PageLoading } from '@/components/dashboard/loading-state';
+import { DashboardModal } from '@/components/dashboard/modal';
+import { Button } from '@/components/ui/button';
+import { dash } from '@/lib/dashboard-ui';
+import { cn } from '@/lib/utils';
 
 interface FeeType {
   id: number;
@@ -67,6 +76,15 @@ const BILLING_PERIODS = [
   { value: 'yearly', label: 'Yearly' },
   { value: 'one_time', label: 'One-Time Payment' },
 ] as const;
+
+const feeTypeTriggerClass = cn(
+  'w-full rounded-xl border px-4 py-2.5 text-left text-sm transition',
+  'border-white/10 bg-white/5 text-slate-200',
+  'focus:border-teal-500/50 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
+);
+
+const feeTypePopoverClass =
+  'absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0d1324]/95 shadow-xl backdrop-blur-xl';
 
 export default function FeeStructurePage() {
   const [feeTypes, setFeeTypes] = useState<FeeType[]>([]);
@@ -152,9 +170,9 @@ export default function FeeStructurePage() {
 
   const handleFeeTypeChange = (feeTypeId: string) => {
     setForm((f) => ({ ...f, fee_type: feeTypeId }));
-    
+
     // Set billing period from selected fee type
-    const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(feeTypeId));
+    const selectedFeeType = feeTypes.find((ft) => ft.id === parseInt(feeTypeId));
     if (selectedFeeType) {
       setForm((f) => ({ ...f, billing_period: selectedFeeType.billing_period }));
     }
@@ -162,13 +180,13 @@ export default function FeeStructurePage() {
 
   const handleEditFeeTypeChange = (feeTypeId: string) => {
     if (!editForm) return;
-    
-    setEditForm((f) => f ? { ...f, fee_type: feeTypeId } : null);
-    
+
+    setEditForm((f) => (f ? { ...f, fee_type: feeTypeId } : null));
+
     // Set billing period from selected fee type
-    const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(feeTypeId));
+    const selectedFeeType = feeTypes.find((ft) => ft.id === parseInt(feeTypeId));
     if (selectedFeeType) {
-      setEditForm((f) => f ? { ...f, billing_period: selectedFeeType.billing_period } : null);
+      setEditForm((f) => (f ? { ...f, billing_period: selectedFeeType.billing_period } : null));
     }
   };
 
@@ -240,25 +258,28 @@ export default function FeeStructurePage() {
         <button
           type="button"
           onClick={() => setActiveFeeTypePicker((prev) => (prev === pickerMode ? null : pickerMode))}
-          className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 text-left bg-white"
+          className={feeTypeTriggerClass}
         >
           <div className="flex items-center justify-between gap-2">
-            <span className={selectedFeeType ? 'text-gray-900' : 'text-gray-400'}>
+            <span className={selectedFeeType ? 'text-slate-200' : 'text-slate-500'}>
               {selectedFeeType ? selectedFeeType.name : 'Select'}
             </span>
-            <span className="text-xs text-gray-400">{isOpen ? '▲' : '▼'}</span>
+            <span className="text-slate-500">{isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
           </div>
         </button>
 
         {isOpen && (
-          <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-lg">
-            <div className="max-h-72 overflow-y-auto p-2 space-y-1">
+          <div className={feeTypePopoverClass}>
+            <div className="max-h-72 space-y-1 overflow-y-auto p-2">
               {feeTypes.map((ft) => (
                 <div
                   key={ft.id}
-                  className={`rounded-lg border px-3 py-2 ${
-                    selectedValue === String(ft.id) ? 'border-teal-200 bg-teal-50' : 'border-transparent bg-white'
-                  }`}
+                  className={cn(
+                    'rounded-lg border px-3 py-2',
+                    selectedValue === String(ft.id)
+                      ? 'border-teal-500/30 bg-teal-500/10'
+                      : 'border-transparent bg-white/[0.02]'
+                  )}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <button
@@ -269,16 +290,12 @@ export default function FeeStructurePage() {
                       }}
                       className="flex-1 text-left"
                     >
-                      <div className="text-sm font-medium text-gray-800">{ft.name}</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-sm font-medium text-slate-200">{ft.name}</div>
+                      <div className="text-xs text-slate-500">
                         {ft.billing_period_display || BILLING_PERIODS.find((p) => p.value === ft.billing_period)?.label || ft.billing_period}
                       </div>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => startFeeTypeEdit(ft)}
-                      className="text-xs font-medium text-teal-600 hover:text-teal-700"
-                    >
+                    <button type="button" onClick={() => startFeeTypeEdit(ft)} className={dash.link}>
                       Edit
                     </button>
                   </div>
@@ -286,24 +303,26 @@ export default function FeeStructurePage() {
               ))}
             </div>
 
-            <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50 rounded-b-xl">
+            <div className="space-y-2 border-t border-white/10 bg-white/[0.03] p-3">
               {editingFeeTypeId ? (
                 <>
-                  <p className="text-xs font-medium text-gray-600">Edit fee type</p>
+                  <p className="text-xs font-medium text-slate-400">Edit fee type</p>
                   <input
                     type="text"
                     value={editingFeeType.name}
                     onChange={(e) => setEditingFeeType((f) => ({ ...f, name: e.target.value }))}
                     placeholder="Fee type name"
-                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                    className={dash.field}
                   />
                   <select
                     value={editingFeeType.billing_period}
                     onChange={(e) => setEditingFeeType((f) => ({ ...f, billing_period: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                    className={dash.field}
                   >
                     {BILLING_PERIODS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
                     ))}
                   </select>
                   <div className="flex gap-2">
@@ -311,43 +330,41 @@ export default function FeeStructurePage() {
                       type="button"
                       onClick={handleUpdateFeeType}
                       disabled={updatingFeeType}
-                      className="px-3 py-1.5 rounded bg-teal-600 text-white text-sm disabled:opacity-50"
+                      className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 text-sm font-medium text-white shadow-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {updatingFeeType ? 'Saving...' : 'Save'}
                     </button>
-                    <button
-                      type="button"
-                      onClick={resetFeeTypeEditor}
-                      className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
-                    >
+                    <button type="button" onClick={resetFeeTypeEditor} className="text-sm text-slate-400 transition hover:text-slate-200">
                       Cancel
                     </button>
                   </div>
                 </>
               ) : (
                 <>
-                  <p className="text-xs font-medium text-gray-600">Add extra fee type</p>
+                  <p className="text-xs font-medium text-slate-400">Add extra fee type</p>
                   <input
                     type="text"
                     value={newFeeType.name}
                     onChange={(e) => setNewFeeType((f) => ({ ...f, name: e.target.value }))}
                     placeholder="e.g. Smart Class, Activity"
-                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                    className={dash.field}
                   />
                   <select
                     value={newFeeType.billing_period}
                     onChange={(e) => setNewFeeType((f) => ({ ...f, billing_period: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm rounded border border-gray-200 bg-white"
+                    className={dash.field}
                   >
                     {BILLING_PERIODS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
                     ))}
                   </select>
                   <button
                     type="button"
                     onClick={handleAddFeeType}
                     disabled={addingFeeType}
-                    className="px-3 py-1.5 rounded bg-teal-600 text-white text-sm disabled:opacity-50"
+                    className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 text-sm font-medium text-white shadow-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {addingFeeType ? 'Adding...' : '+ Add fee type'}
                   </button>
@@ -453,117 +470,148 @@ export default function FeeStructurePage() {
     }
   };
 
+  const closeEditModal = () => {
+    setEditingId(null);
+    setEditForm(null);
+  };
+
+  if (loading) {
+    return (
+      <PageShell>
+        <PageLoading />
+      </PageShell>
+    );
+  }
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-8">Fee Structure</h1>
-      <p className="text-gray-600 mb-6">Set fee amounts per class. Choose billing period: monthly, quarterly, half-yearly, or yearly. Add classes first in the Classes section.</p>
+    <PageShell>
+      <PageHeader
+        icon={FileText}
+        eyebrow="Fee configuration"
+        title="Fee"
+        highlight="Structure"
+        subtitle="Set fee amounts per class. Choose billing period: monthly, quarterly, half-yearly, or yearly. Add classes first in the Classes section."
+        actions={
+          <Button
+            onClick={() => setShowForm(!showForm)}
+            className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/25 hover:from-teal-400 hover:to-cyan-400"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            {showForm ? 'Cancel' : 'Add fee structure'}
+          </Button>
+        }
+      />
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-100 p-6 mb-8 shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">Add fee for class</h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fee type</label>
+        <GlassCard delay={0.05}>
+          <div className="border-b border-white/10 px-6 py-4">
+            <h2 className={dash.sectionTitle}>Add fee for class</h2>
+          </div>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1">
+              <label className={dash.label}>Fee type</label>
               {renderFeeTypePicker(form.fee_type, handleFeeTypeChange, 'create')}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
+            <div className="space-y-1">
+              <label className={dash.label}>Class</label>
               <select
                 value={form.school_class}
                 onChange={(e) => setForm((f) => ({ ...f, school_class: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
                 required
               >
                 <option value="">Select</option>
                 {classes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹)</label>
+            <div className="space-y-1">
+              <label className={dash.label}>Amount (₹)</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={form.amount}
                 onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
                 required
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+            <div className="space-y-1">
+              <label className={dash.label}>
                 Billing Period
-                <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">From Fee Type</span>
+                <span className={cn(dash.sectionChip, 'ml-1 align-middle')}>From Fee Type</span>
               </label>
-              <div className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600">
+              <div className={cn(dash.field, 'bg-white/[0.03]', 'text-slate-400')}>
                 {form.fee_type ? (
-                  <div className="flex items-center justify-between">
-                    <span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-200">
                       {(() => {
-                        const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(form.fee_type));
+                        const selectedFeeType = feeTypes.find((ft) => ft.id === parseInt(form.fee_type));
                         const billingPeriod = selectedFeeType?.billing_period;
-                        const periodLabel = BILLING_PERIODS.find(p => p.value === billingPeriod)?.label || billingPeriod;
+                        const periodLabel = BILLING_PERIODS.find((p) => p.value === billingPeriod)?.label || billingPeriod;
                         return periodLabel || 'Select fee type';
                       })()}
                     </span>
-                    <span className="text-xs text-teal-600">Linked to fee type</span>
+                    <span className="text-xs text-teal-400">Linked to fee type</span>
                   </div>
                 ) : (
                   'Select fee type to see billing period'
                 )}
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="mt-1 text-xs text-slate-500">
                 Billing period is automatically set based on the selected fee type and cannot be changed here.
               </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Due day (1-28)</label>
+            <div className="space-y-1">
+              <label className={dash.label}>Due day (1-28)</label>
               <input
                 type="number"
                 min="1"
                 max="28"
                 value={form.due_day}
                 onChange={(e) => setForm((f) => ({ ...f, due_day: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Late fine/day (₹)</label>
+            <div className="space-y-1">
+              <label className={dash.label}>Late fine/day (₹)</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={form.late_fine_per_day}
                 onChange={(e) => setForm((f) => ({ ...f, late_fine_per_day: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Academic year</label>
-              <select
-                value={form.academic_year}
-                onChange={(e) => setForm((f) => ({ ...f, academic_year: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-              >
+            <div className="space-y-1">
+              <label className={dash.label}>Academic year</label>
+              <select value={form.academic_year} onChange={(e) => setForm((f) => ({ ...f, academic_year: e.target.value }))} className={dash.field}>
                 {(academicYearOptions.length ? academicYearOptions : getAcademicYearOptions(4)).map((ay) => (
-                  <option key={ay.value} value={ay.value}>{ay.label}</option>
+                  <option key={ay.value} value={ay.value}>
+                    {ay.label}
+                  </option>
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 lg:col-span-1">
               <input
                 type="checkbox"
                 id="allow_yearly"
                 checked={form.allow_yearly_payment}
                 onChange={(e) => setForm((f) => ({ ...f, allow_yearly_payment: e.target.checked }))}
-                className="rounded border-gray-300"
+                className="rounded border-white/20 bg-white/10 text-teal-500 focus:ring-teal-500/30"
               />
-              <label htmlFor="allow_yearly" className="text-sm font-medium text-gray-700">Allow full year payment at once</label>
+              <label htmlFor="allow_yearly" className="cursor-pointer text-sm font-medium text-slate-400">
+                Allow full year payment at once
+              </label>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Discount % for full year payment</label>
+            <div className="space-y-1 lg:col-span-1">
+              <label className={dash.label}>Discount % for full year payment</label>
               <input
                 type="number"
                 min="0"
@@ -571,205 +619,209 @@ export default function FeeStructurePage() {
                 step="0.5"
                 value={form.yearly_discount_percent}
                 onChange={(e) => setForm((f) => ({ ...f, yearly_discount_percent: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
-              <p className="text-xs text-gray-500 mt-0.5">e.g. 5 = 5% off when paying whole year upfront</p>
+              <p className="mt-1 text-xs text-slate-500">e.g. 5 = 5% off when paying whole year upfront</p>
             </div>
-            <div className="flex items-end gap-2">
-              <button type="submit" disabled={saving || classes.length === 0} className="px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Add'}
-              </button>
-              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2.5 text-gray-600 hover:text-gray-800">
+            <div className="flex flex-col gap-3 lg:col-span-full lg:flex-row lg:items-end">
+              <Button
+                type="submit"
+                disabled={saving || classes.length === 0}
+                className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving…' : 'Add'}
+              </Button>
+              <button type="button" onClick={() => setShowForm(false)} className="text-sm text-slate-400 hover:text-slate-200">
                 Cancel
               </button>
+              {saving && <InlineLoading message="Saving…" />}
             </div>
           </form>
-        </div>
+        </GlassCard>
       )}
 
       {editingId && editForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl border border-gray-100 p-6 max-w-2xl w-full shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4">Edit fee structure</h2>
-            <form onSubmit={handleUpdate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Fee type</label>
-                {renderFeeTypePicker(editForm.fee_type, handleEditFeeTypeChange, 'edit')}
+        <DashboardModal title="Edit fee structure" wide onClose={closeEditModal}>
+          <form onSubmit={handleUpdate} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className={dash.label}>Fee type</label>
+              {renderFeeTypePicker(editForm.fee_type, handleEditFeeTypeChange, 'edit')}
+            </div>
+            <div className="space-y-1">
+              <label className={dash.label}>Class</label>
+              <select
+                value={editForm.school_class}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, school_class: e.target.value } : null))}
+                className={dash.field}
+                required
+              >
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className={dash.label}>Amount (₹)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editForm.amount}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, amount: e.target.value } : null))}
+                className={dash.field}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className={dash.label}>
+                Billing Period
+                <span className={cn(dash.sectionChip, 'ml-1 align-middle')}>From Fee Type</span>
+              </label>
+              <div className={cn(dash.field, 'bg-white/[0.03]', 'text-slate-400')}>
+                {editForm?.fee_type ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-200">
+                      {(() => {
+                        const selectedFeeType = feeTypes.find((ft) => ft.id === parseInt(editForm.fee_type));
+                        const billingPeriod = selectedFeeType?.billing_period;
+                        const periodLabel = BILLING_PERIODS.find((p) => p.value === billingPeriod)?.label || billingPeriod;
+                        return periodLabel || 'Select fee type';
+                      })()}
+                    </span>
+                    <span className="text-xs text-teal-400">Linked to fee type</span>
+                  </div>
+                ) : (
+                  'Select fee type to see billing period'
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
-                <select
-                  value={editForm.school_class}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, school_class: e.target.value } : null)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                  required
-                >
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={editForm.amount}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, amount: e.target.value } : null)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Billing Period
-                  <span className="ml-1 text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded">From Fee Type</span>
-                </label>
-                <div className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-600">
-                  {editForm?.fee_type ? (
-                    <div className="flex items-center justify-between">
-                      <span>
-                        {(() => {
-                          const selectedFeeType = feeTypes.find(ft => ft.id === parseInt(editForm.fee_type));
-                          const billingPeriod = selectedFeeType?.billing_period;
-                          const periodLabel = BILLING_PERIODS.find(p => p.value === billingPeriod)?.label || billingPeriod;
-                          return periodLabel || 'Select fee type';
-                        })()}
-                      </span>
-                      <span className="text-xs text-teal-600">Linked to fee type</span>
-                    </div>
-                  ) : (
-                    'Select fee type to see billing period'
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Billing period is automatically set based on the selected fee type and cannot be changed here.
-                </p>
-              </div>
-                            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Due day (1-28)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="28"
-                  value={editForm.due_day}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, due_day: e.target.value } : null)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Late fine/day (₹)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={editForm.late_fine_per_day}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, late_fine_per_day: e.target.value } : null)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Academic year</label>
-                <select
-                  value={editForm.academic_year}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, academic_year: e.target.value } : null)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                >
-                  {(academicYearOptions.length ? academicYearOptions : getAcademicYearOptions(4)).map((ay) => (
-                    <option key={ay.value} value={ay.value}>{ay.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="edit_allow_yearly"
-                  checked={editForm.allow_yearly_payment}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, allow_yearly_payment: e.target.checked } : null)}
-                  className="rounded border-gray-300"
-                />
-                <label htmlFor="edit_allow_yearly" className="text-sm font-medium text-gray-700">Allow full year payment</label>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Discount % for full year</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.5"
-                  value={editForm.yearly_discount_percent}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, yearly_discount_percent: e.target.value } : null)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-              <div className="md:col-span-2 flex gap-2">
-                <button type="submit" disabled={saving} className="px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-                <button type="button" onClick={() => { setEditingId(null); setEditForm(null); }} className="px-4 py-2.5 text-gray-600 hover:text-gray-800">
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Billing period is automatically set based on the selected fee type and cannot be changed here.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className={dash.label}>Due day (1-28)</label>
+              <input
+                type="number"
+                min="1"
+                max="28"
+                value={editForm.due_day}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, due_day: e.target.value } : null))}
+                className={dash.field}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className={dash.label}>Late fine/day (₹)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editForm.late_fine_per_day}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, late_fine_per_day: e.target.value } : null))}
+                className={dash.field}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className={dash.label}>Academic year</label>
+              <select
+                value={editForm.academic_year}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, academic_year: e.target.value } : null))}
+                className={dash.field}
+              >
+                {(academicYearOptions.length ? academicYearOptions : getAcademicYearOptions(4)).map((ay) => (
+                  <option key={ay.value} value={ay.value}>
+                    {ay.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="edit_allow_yearly"
+                checked={editForm.allow_yearly_payment}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, allow_yearly_payment: e.target.checked } : null))}
+                className="rounded border-white/20 bg-white/10 text-teal-500 focus:ring-teal-500/30"
+              />
+              <label htmlFor="edit_allow_yearly" className="cursor-pointer text-sm font-medium text-slate-400">
+                Allow full year payment
+              </label>
+            </div>
+            <div className="space-y-1">
+              <label className={dash.label}>Discount % for full year</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={editForm.yearly_discount_percent}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, yearly_discount_percent: e.target.value } : null))}
+                className={dash.field}
+              />
+            </div>
+            <div className="flex flex-col gap-3 md:col-span-2 md:flex-row md:items-center">
+              <Button type="submit" disabled={saving} className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500 disabled:cursor-not-allowed">
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+              <button type="button" onClick={closeEditModal} className="text-sm text-slate-400 hover:text-slate-200">
+                Cancel
+              </button>
+              {saving && <InlineLoading message="Saving…" />}
+            </div>
+          </form>
+        </DashboardModal>
       )}
 
-      {!showForm && (
-        <button
-          onClick={() => setShowForm(true)}
-          className="mb-6 px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 transition"
-        >
-          + Add Fee Structure
-        </button>
-      )}
-
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center text-gray-500">Loading...</div>
-        ) : structures.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">No fee structure yet. Add classes first, then add fees per class above.</div>
+      <GlassCard delay={0.1}>
+        {structures.length === 0 ? (
+          <p className={dash.empty}>No fee structure yet. Add classes first, then add fees per class above.</p>
         ) : (
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Fee type</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Class</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Amount</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Period</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Due day</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Late fine/day</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Academic year</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {structures.map((s) => (
-                <tr key={s.id} className="border-b border-gray-50">
-                  <td className="py-4 px-6">{s.fee_type_name}</td>
-                  <td className="py-4 px-6">{s.class_name}</td>
-                  <td className="py-4 px-6">₹{parseFloat(s.amount).toLocaleString('en-IN')}</td>
-                  <td className="py-4 px-6">{s.billing_period_display || BILLING_PERIODS.find((p) => p.value === s.fee_type_billing_period)?.label || s.fee_type_billing_period}</td>
-                  <td className="py-4 px-6">{s.due_day}</td>
-                  <td className="py-4 px-6">₹{parseFloat(s.late_fine_per_day || '0').toLocaleString('en-IN')}</td>
-                  <td className="py-4 px-6">{formatAcademicYear(s.academic_year, startMonth)}</td>
-                  <td className="py-4 px-6">
-                    {s.is_locked ? (
-                      <span className="text-xs text-amber-600">Linked to students – cannot edit</span>
-                    ) : (
-                      <div className="flex gap-2">
-                        <button onClick={() => openEdit(s)} className="text-teal-600 hover:text-teal-700 text-sm font-medium">Edit</button>
-                        <button onClick={() => handleDelete(s.id)} className="text-red-600 hover:text-red-700 text-sm font-medium">Delete</button>
-                      </div>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className={dash.table}>
+              <thead className={dash.thead}>
+                <tr>
+                  <th className={dash.th}>Fee type</th>
+                  <th className={dash.th}>Class</th>
+                  <th className={dash.th}>Amount</th>
+                  <th className={dash.th}>Period</th>
+                  <th className={dash.th}>Due day</th>
+                  <th className={dash.th}>Late fine/day</th>
+                  <th className={dash.th}>Academic year</th>
+                  <th className={dash.th}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {structures.map((s, i) => (
+                  <motion.tr key={s.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 + i * 0.04 }} className={dash.tr}>
+                    <td className={dash.td}>{s.fee_type_name}</td>
+                    <td className={dash.td}>{s.class_name}</td>
+                    <td className={dash.td}>₹{parseFloat(s.amount).toLocaleString('en-IN')}</td>
+                    <td className={dash.td}>{s.billing_period_display || BILLING_PERIODS.find((p) => p.value === s.fee_type_billing_period)?.label || s.fee_type_billing_period}</td>
+                    <td className={dash.td}>{s.due_day}</td>
+                    <td className={dash.td}>₹{parseFloat(s.late_fine_per_day || '0').toLocaleString('en-IN')}</td>
+                    <td className={dash.td}>{formatAcademicYear(s.academic_year, startMonth)}</td>
+                    <td className={dash.td}>
+                      {s.is_locked ? (
+                        <span className="text-xs text-amber-400">Linked to students – cannot edit</span>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => openEdit(s)} className={dash.link}>
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => handleDelete(s.id)} className={dash.linkDanger}>
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
-    </div>
+      </GlassCard>
+    </PageShell>
   );
 }

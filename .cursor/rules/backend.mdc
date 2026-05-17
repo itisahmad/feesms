@@ -1,0 +1,81 @@
+---
+description: SchoolFee Pro — Django backend (schools, payments, API)
+globs: backend/**/*
+alwaysApply: false
+---
+
+# Backend app (`backend/`)
+
+Applies only when editing files under **`backend/`**. Do not use these rules for `frontend/`.
+
+## Stack
+
+- Django 6 + DRF + SimpleJWT + PostgreSQL (`DATABASE_URL` in `.env`)
+- WhiteNoise for static files; run `collectstatic` after static changes
+- Entry: `manage.py`, URLs: `config/urls.py`
+
+## Apps (bounded contexts)
+
+| App | Path | Responsibility |
+|-----|------|----------------|
+| **schools** | `schools/` | Tenancy, students, fees, expenses, messaging — see `schools/README.md` |
+| **payments** | `payments/` | Razorpay only — see `payments/README.md` |
+| **config** | `config/` | Settings, root URLs, WSGI |
+
+`api/` = Vercel serverless stubs only; **not** the main API. Real API is Django at `/api/`.
+
+## Architecture rules
+
+1. **Business logic on models** when reused (`StudentFee.balance`, `School.apply_plan`, `FeeStructure.is_billable_for_period`)
+2. **Multi-step workflows in `services/`** or `bulk_fee_collection.py` — keep views thin
+3. **School scoping**: use `SchoolScopedMixin` / `SchoolNestedMixin` (`schools/mixins.py`) — don't copy `request.user.school` filters everywhere
+4. **Fee ledger writes** stay in `schools`; **Razorpay orders/verify** stay in `payments`
+5. New viewsets → `schools/views/<domain>.py`, export from `schools/views/__init__.py`
+
+## schools/ layout
+
+```
+schools/
+├── models.py, serializers.py, urls.py
+├── views/          # auth, school, students, fees, expenses
+├── services/       # fee_collection, messaging, reminders
+├── bulk_fee_collection.py
+└── management/commands/
+```
+
+## payments/ layout
+
+```
+payments/
+├── models.py, views.py, services.py  # create_order, verify_signature
+└── urls.py   # /api/payments/*
+```
+
+Never mix platform billing orders with parent fee settlement.
+
+## Environment
+
+```env
+DJANGO_SECRET_KEY=...
+DATABASE_URL=postgresql://...
+RAZORPAY_KEY_ID=...
+RAZORPAY_KEY_SECRET=...
+```
+
+No hardcoded DB URLs or secrets in `settings.py`.
+
+## Do not
+
+- Put Razorpay logic in `schools/views/fees.py` (use `payments` + `bulk_fee_collection`)
+- Skip migrations after model changes
+- Add large blocks to a single `views.py` file — split by domain
+
+## Commands
+
+```bash
+cd backend && source venv/bin/activate
+python manage.py check
+python manage.py migrate
+python manage.py collectstatic --noinput
+python manage.py runserver
+```

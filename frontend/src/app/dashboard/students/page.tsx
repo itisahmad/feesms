@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { Users, Plus, Search } from 'lucide-react';
 import { getStudents, createStudent, updateStudent, getClasses, getFeeStructures, getStudentFeeHistory, getSchool } from '@/lib/api';
+import { PageHeader } from '@/components/dashboard/page-header';
+import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
+import { InlineLoading } from '@/components/dashboard/loading-state';
+import { Button } from '@/components/ui/button';
+import { dash } from '@/lib/dashboard-ui';
+import { cn } from '@/lib/utils';
 
 interface Section {
   id: number;
@@ -308,52 +316,57 @@ export default function StudentsPage() {
   const getFeeEffectiveFrom = (id: number) => form.fee_structure_choices.find((c) => c.fee_structure_id === id)?.effective_from || '';
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Students</h1>
-          <p className="text-gray-600 mt-1">Select class first, then section. Add classes & sections in the Classes section.</p>
-        </div>
-        <button
-          onClick={() => {
-            if (showForm) handleCancelEdit();
-            else {
-              setEditingId(null);
-              setForm(getInitialStudentForm());
-              setShowForm(true);
-            }
-          }}
-          className="px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 transition"
-        >
-          {showForm ? 'Cancel' : '+ Add Student'}
-        </button>
-      </div>
+    <PageShell>
+      <PageHeader
+        icon={Users}
+        eyebrow="Roster"
+        title="Students"
+        subtitle="Select a class first, then a section. Add classes and sections under Classes before enrolling students."
+        actions={
+          <Button
+            onClick={() => {
+              if (showForm) handleCancelEdit();
+              else {
+                setEditingId(null);
+                setForm(getInitialStudentForm());
+                setShowForm(true);
+              }
+            }}
+            className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/25 hover:from-teal-400 hover:to-cyan-400 border-0"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            {showForm ? 'Cancel' : 'Add Student'}
+          </Button>
+        }
+      />
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-100 p-6 mb-8 shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">{editingId ? 'Edit student' : 'Add new student'}</h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {error && <div className="md:col-span-2 p-3 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
+        <GlassCard delay={0.05}>
+          <div className="border-b border-white/10 px-6 py-4">
+            <h2 className={dash.sectionTitle}>{editingId ? 'Edit student' : 'Add new student'}</h2>
+          </div>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
+            {error && <p className={cn(dash.error, 'md:col-span-2')}>{error}</p>}
             {classes.length === 0 && (
-              <div className="md:col-span-2 p-3 rounded bg-amber-50 text-amber-800 text-sm">
+              <p className={cn(dash.warn, 'md:col-span-2')}>
                 No classes yet. Add classes with sections in the Classes section first.
-              </div>
+              </p>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Student name *</label>
+              <label className={dash.label}>Student name *</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
+              <label className={dash.label}>Class *</label>
               <select
                 value={form.school_class}
                 onChange={(e) => setForm((f) => ({ ...f, school_class: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
                 required
               >
                 <option value="">Select class</option>
@@ -363,11 +376,11 @@ export default function StudentsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Section *</label>
+              <label className={dash.label}>Section *</label>
               <select
                 value={form.section}
                 onChange={(e) => setForm((f) => ({ ...f, section: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
                 required
                 disabled={!form.school_class || sectionsForClass.length === 0}
               >
@@ -377,11 +390,11 @@ export default function StudentsPage() {
                 ))}
               </select>
               {form.school_class && sectionsForClass.length === 0 && (
-                <p className="text-amber-600 text-xs mt-1">Add sections to this class first</p>
+                <p className="mt-1 text-xs text-amber-400">Add sections to this class first</p>
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Admission date</label>
+              <label className={dash.label}>Admission date</label>
               <input
                 type="date"
                 value={form.admission_date}
@@ -395,11 +408,11 @@ export default function StudentsPage() {
                     fee_structure_choices: f.fee_structure_choices.map((c) => ({ ...c, effective_from: effectiveFrom })),
                   }));
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Charges apply from</label>
+              <label className={dash.label}>Charges apply from</label>
               <input
                 type="date"
                 value={form.charges_effective_from}
@@ -411,40 +424,42 @@ export default function StudentsPage() {
                     fee_structure_choices: f.fee_structure_choices.map((c) => ({ ...c, effective_from: d })),
                   }));
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
-              <p className="text-xs text-gray-500 mt-1">Defaults to admission date. Can be changed to a future date if charges start later.</p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="mt-1 text-xs text-slate-500">Defaults to admission date. Can be changed to a future date if charges start later.</p>
+              <p className="mt-1 text-xs text-slate-500">
                 School fee start day is {feeStartDay}. If admission is on or before this day, current month can be charged. If admission is after this day (e.g. 28-Apr with start day 1), default becomes 1-May so April is not charged.
               </p>
             </div>
             {feeStructures.length > 0 && (
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Fee types to charge (tick to apply)</label>
-                <p className="text-xs text-gray-500 mb-2">Use &quot;Start from&quot; when a fee (library, exam, transport, etc.) begins mid-session — leave empty for from admission.</p>
-                <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                <label className={dash.label}>Fee types to charge (tick to apply)</label>
+                <p className="mb-2 text-xs text-slate-500">
+                  Use &quot;Start from&quot; when a fee (library, exam, transport, etc.) begins mid-session — leave empty for from admission.
+                </p>
+                <div className={cn(dash.innerPanel, 'space-y-3')}>
                   {feeStructures.map((fs) => (
                     <div key={fs.id} className="flex flex-wrap items-center gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className="flex cursor-pointer items-center gap-2">
                         <input
                           type="checkbox"
                           checked={isFeeSelected(fs.id)}
                           onChange={() => toggleFeeStructure(fs.id)}
-                          className="rounded border-gray-300"
+                          className="rounded border-white/20 bg-white/5 text-teal-500 focus:ring-teal-500/30"
                         />
-                        <span className="text-sm">
+                        <span className="text-sm text-slate-300">
                           {fs.fee_type_name} - ₹{parseFloat(fs.amount).toLocaleString('en-IN')}
                           {fs.billing_period_display ? ` (${fs.billing_period_display})` : ''}
                         </span>
                       </label>
                       {isFeeSelected(fs.id) && (
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500">Start from:</span>
+                          <span className="text-xs text-slate-500">Start from:</span>
                           <input
                             type="date"
                             value={getFeeEffectiveFrom(fs.id)}
                             onChange={(e) => setFeeEffectiveFrom(fs.id, e.target.value)}
-                            className="text-sm px-2 py-1 rounded border border-gray-200"
+                            className={dash.fieldSm}
                             placeholder="From admission"
                           />
                         </div>
@@ -455,139 +470,151 @@ export default function StudentsPage() {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Parent name *</label>
+              <label className={dash.label}>Parent name *</label>
               <input
                 value={form.parent_name}
                 onChange={(e) => setForm((f) => ({ ...f, parent_name: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Parent phone *</label>
+              <label className={dash.label}>Parent phone *</label>
               <input
                 value={form.parent_phone}
                 onChange={(e) => setForm((f) => ({ ...f, parent_phone: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
                 placeholder="10-digit mobile"
                 inputMode="numeric"
                 maxLength={13}
                 pattern="[0-9+ ]*"
                 required
               />
-              <p className="text-xs text-gray-500 mt-1">Enter a 10-digit mobile number, optionally with 91 prefix.</p>
+              <p className="mt-1 text-xs text-slate-500">Enter a 10-digit mobile number, optionally with 91 prefix.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Parent email</label>
+              <label className={dash.label}>Parent email</label>
               <input
                 type="email"
                 value={form.parent_email}
                 onChange={(e) => setForm((f) => ({ ...f, parent_email: e.target.value }))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Admission no.</label>
+              <label className={dash.label}>Admission no.</label>
               <input
                 value={form.admission_number}
                 readOnly
                 disabled
                 placeholder="Auto-generated on save"
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
-              <p className="text-xs text-gray-500 mt-1">Generated automatically by software.</p>
+              <p className="mt-1 text-xs text-slate-500">Generated automatically by software.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Roll no.</label>
+              <label className={dash.label}>Roll no.</label>
               <input
                 value={form.roll_number}
                 onChange={(e) => setForm((f) => ({ ...f, roll_number: e.target.value }))}
                 placeholder="Auto-generated (1,2,3...) if left blank"
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
+                className={dash.field}
               />
-              <p className="text-xs text-gray-500 mt-1">Auto-generated class-section wise. Admin can edit; must be unique in class and section.</p>
+              <p className="mt-1 text-xs text-slate-500">Auto-generated class-section wise. Admin can edit; must be unique in class and section.</p>
             </div>
             <div className="md:col-span-2">
-              <button type="submit" disabled={saving || classes.length === 0} className="px-6 py-2.5 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
-                {saving ? 'Saving...' : (editingId ? 'Update Student' : 'Add Student')}
-              </button>
+              <Button
+                type="submit"
+                disabled={saving || classes.length === 0}
+                className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0"
+              >
+                {saving ? 'Saving…' : (editingId ? 'Update Student' : 'Add Student')}
+              </Button>
             </div>
           </form>
-        </div>
+        </GlassCard>
       )}
 
-      <div className="flex gap-4 mb-6">
-        <input
-          type="text"
-          placeholder="Search by name or phone..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="px-4 py-2 rounded-lg border border-gray-200 w-64 focus:ring-2 focus:ring-teal-500"
-        />
-        <select
-          value={classFilter}
-          onChange={(e) => setClassFilter(e.target.value)}
-          className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-        >
-          <option value="">All classes</option>
-          {classes.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        <select
-          value={sectionFilter}
-          onChange={(e) => setSectionFilter(e.target.value)}
-          className="px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500"
-          disabled={!classFilter}
-        >
-          <option value="">All sections</option>
-          {filterSections.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-      </div>
+      <GlassCard delay={0.1}>
+        <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-4 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Search by name or phone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={cn(dash.field, 'pl-10')}
+            />
+          </div>
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            className={cn(dash.field, 'w-full sm:w-48')}
+          >
+            <option value="">All classes</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <select
+            value={sectionFilter}
+            onChange={(e) => setSectionFilter(e.target.value)}
+            className={cn(dash.field, 'w-full sm:w-48')}
+            disabled={!classFilter}
+          >
+            <option value="">All sections</option>
+            {filterSections.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
 
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-500">Loading...</div>
+          <InlineLoading />
         ) : students.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">No students yet. Add your first student above.</div>
+          <p className={dash.empty}>No students yet. Add your first student above.</p>
         ) : (
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Name</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Class</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Parent</th>
-                <th className="text-left py-4 px-6 font-medium text-gray-700">Phone</th>
-                <th className="text-right py-4 px-6 font-medium text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {students.map((s) => (
-                <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                  <td className="py-4 px-6">
-                    <Link href={`/dashboard/students/${s.id}`} className="font-medium text-teal-600 hover:underline">
-                      {s.name}
-                    </Link>
-                  </td>
-                  <td className="py-4 px-6">{s.class_name}</td>
-                  <td className="py-4 px-6">{s.parent_name}</td>
-                  <td className="py-4 px-6">{s.parent_phone}</td>
-                  <td className="py-4 px-6 text-right">
-                    <button
-                      onClick={() => handleEdit(s.id)}
-                      className="text-sm text-teal-600 hover:underline font-medium"
-                    >
-                      Edit
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className={dash.table}>
+              <thead className={dash.thead}>
+                <tr>
+                  <th className={dash.th}>Name</th>
+                  <th className={dash.th}>Class</th>
+                  <th className={dash.th}>Parent</th>
+                  <th className={dash.th}>Phone</th>
+                  <th className={cn(dash.th, 'text-right')}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {students.map((s, i) => (
+                  <motion.tr
+                    key={s.id}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.12 + i * 0.04 }}
+                    className={dash.tr}
+                  >
+                    <td className={cn(dash.td, 'font-medium')}>
+                      <Link href={`/dashboard/students/${s.id}`} className={dash.link}>
+                        {s.name}
+                      </Link>
+                    </td>
+                    <td className={dash.td}>{s.class_name}</td>
+                    <td className={dash.td}>{s.parent_name}</td>
+                    <td className={dash.td}>{s.parent_phone}</td>
+                    <td className={cn(dash.td, 'text-right')}>
+                      <button type="button" onClick={() => handleEdit(s.id)} className={dash.link}>
+                        Edit
+                      </button>
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
-    </div>
+      </GlassCard>
+    </PageShell>
   );
 }

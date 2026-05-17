@@ -1,0 +1,16 @@
+---
+description: (Consolidated) UI patterns — see frontend.mdc for the full design system
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# Frontend UI
+
+**All UI and design-system rules live in [frontend.mdc](./frontend.mdc).** Read that file before creating or styling components.
+
+Quick reminders:
+
+- Dark glass dashboard (`#0a0f1a`, `glass-panel`, teal/cyan accents, Framer Motion)
+- shadcn/ui from `@/components/ui/*`
+- Reuse `MeshBackground`, `StatCard`, `AnimatedNumber` under `components/dashboard/`
+- Cursor defaults: `globals.css` — pointer on clickables, `not-allowed` when disabled
