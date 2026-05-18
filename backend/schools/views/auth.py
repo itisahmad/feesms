@@ -29,6 +29,7 @@ from ..default_fee_types import ensure_default_fee_types_for_school
 from ..fee_periods import is_struct_billable_for_period
 from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
+from ..module_permissions import MODULE_DEFINITIONS, PERMISSION_KEYS, permissions_payload_for_user
 from ..permissions import IsSchoolOwner
 from ..services.fee_collection import (
     build_collection_summary,
@@ -59,8 +60,11 @@ class RegisterView(APIView):
 class CurrentUserView(APIView):
     def get(self, request):
         ensure_default_fee_types_for_school(request.user.school)
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        data = UserSerializer(request.user).data
+        data.update(permissions_payload_for_user(request.user))
+        data["module_definitions"] = MODULE_DEFINITIONS
+        data["permission_keys"] = list(PERMISSION_KEYS)
+        return Response(data)
 
 
 class StaffUserViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
@@ -110,6 +114,15 @@ class StaffUserViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         if instance.role == 'owner':
             raise ValidationError('Owner account cannot be removed.')
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="module-definitions")
+    def module_definitions(self, request):
+        return Response(
+            {
+                "modules": MODULE_DEFINITIONS,
+                "permission_keys": list(PERMISSION_KEYS),
+            }
+        )
 
 
 class ForgotPasswordView(APIView):

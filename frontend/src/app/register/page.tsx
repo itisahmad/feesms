@@ -63,7 +63,7 @@ export default function RegisterPage() {
           <h1 className="text-3xl font-bold text-teal-800">SchoolFee Pro</h1>
           <p className="text-gray-600 mt-1">Register your school — 30-day free trial</p>
         </div>
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+        <div className="auth-surface rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
           <h2 className="text-xl font-semibold text-gray-800 mb-6">Create account</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error.general && (

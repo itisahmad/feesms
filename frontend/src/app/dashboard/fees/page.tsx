@@ -6,7 +6,6 @@ import { motion } from 'framer-motion';
 import { Wallet, Layers, CalendarDays } from 'lucide-react';
 import {
   getCollectionSummary,
-  getReceipt,
   generateFees,
   payAllPending,
   payAllYear,
@@ -16,10 +15,12 @@ import {
   createFeeCollectionOrder,
   verifyFeeCollectionPayment,
 } from '@/lib/api';
+import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { InlineLoading } from '@/components/dashboard/loading-state';
 import { DashboardModal } from '@/components/dashboard/modal';
+import { ReceiptPrintModal } from '@/components/dashboard/receipt-print-modal';
 import { Button } from '@/components/ui/button';
 import { dash } from '@/lib/dashboard-ui';
 import {
@@ -101,6 +102,7 @@ export default function FeesPage() {
   const [view, setView] = useState<'summary' | 'students' | 'defaulters'>('summary');
   const [classFilter, setClassFilter] = useState('');
   const [payAllStudent, setPayAllStudent] = useState<StudentSummary | null>(null);
+  const [receiptStudent, setReceiptStudent] = useState<StudentSummary | null>(null);
   const [payMode, setPayMode] = useState<'monthly' | 'yearly' | 'all_pending'>('monthly');
   const [paymentPreview, setPaymentPreview] = useState<PaymentPreview | null>(null);
   const [classFeeOptions, setClassFeeOptions] = useState<{ id: number; fee_type_name: string; amount: string; billing_period_display?: string; academic_year?: string }[]>([]);
@@ -396,37 +398,6 @@ export default function FeesPage() {
     }
   };
 
-  const handleDownloadReceipt = async (studentFeeId: number, studentName: string) => {
-    try {
-      const { data } = await getReceipt(studentFeeId);
-      const url = URL.createObjectURL(new Blob([data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipt-${studentName}-${month}-${year}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert('Failed to download receipt');
-    }
-  };
-
-  const handlePrintReceipt = async (studentFeeId: number, studentName: string) => {
-    try {
-      const { data } = await getReceipt(studentFeeId);
-      const blob = new Blob([data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, '_blank', 'width=800,height=600');
-      if (win) {
-        win.onload = () => setTimeout(() => win!.print(), 500);
-      } else {
-        handleDownloadReceipt(studentFeeId, studentName);
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      alert('Failed to print receipt');
-    }
-  };
-
   const filteredStudents = data?.student_wise.filter((s) => !classFilter || s.class_name.startsWith(classFilter)) || [];
   const defaulters = data?.defaulters.filter((s) => !classFilter || s.class_name.startsWith(classFilter)) || [];
 
@@ -463,31 +434,26 @@ export default function FeesPage() {
             <CalendarDays className="h-3.5 w-3.5" />
             Current month ({MONTHS[currentMonth]} {currentYear})
           </div>
-          <select
-            value={month}
-            onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-            className={dash.fieldSm}
+          <DashboardSelect
+            value={String(month)}
+            onChange={(v) => setMonth(parseInt(v, 10))}
+            className={cn(dash.fieldSm, 'min-h-[38px] min-w-[140px] py-2')}
             aria-label="Reporting month"
-          >
-            {availableMonths.map(({ value, label }) => (
-              <option key={value} value={value}>
-                {label} {currentYear}
-              </option>
-            ))}
-          </select>
-          <select
+            options={availableMonths.map(({ value, label }) => ({
+              value: String(value),
+              label: `${label} ${currentYear}`,
+            }))}
+          />
+          <DashboardSelect
             value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className={cn(dash.fieldSm, 'flex min-w-[140px] items-center')}
+            onChange={setClassFilter}
+            allowEmpty
+            emptyLabel="All classes"
+            placeholder="All classes"
+            className={cn(dash.fieldSm, 'min-h-[38px] min-w-[140px] py-2')}
             aria-label="Filter by class"
-          >
-            <option value="">All classes</option>
-            {data?.class_wise.map((c) => (
-              <option key={c.class_name} value={c.class_name}>
-                {c.class_name}
-              </option>
-            ))}
-          </select>
+            options={(data?.class_wise ?? []).map((c) => ({ value: c.class_name, label: c.class_name }))}
+          />
           <Button
             onClick={handleGenerateFees}
             disabled={generating || !canGenerateFees}
@@ -639,20 +605,15 @@ export default function FeesPage() {
                                         <span className={f.balance > 0 ? 'text-amber-400' : 'text-teal-400'}>
                                           ₹{f.paid.toLocaleString('en-IN')}/{f.total.toLocaleString('en-IN')}
                                         </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => handlePrintReceipt(f.student_fee_id, s.student_name)}
-                                          className="text-teal-400 hover:text-teal-300 text-xs underline-offset-4 hover:underline"
-                                        >
-                                          Print
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDownloadReceipt(f.student_fee_id, s.student_name)}
-                                          className="text-xs text-slate-500 hover:text-slate-300 underline-offset-4 hover:underline"
-                                        >
-                                          Download
-                                        </button>
+                                        {f.paid > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setReceiptStudent(s)}
+                                            className="text-xs text-teal-400 underline-offset-4 hover:text-teal-300 hover:underline"
+                                          >
+                                            Receipt
+                                          </button>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
@@ -675,18 +636,29 @@ export default function FeesPage() {
                             </span>
                           </td>
                           <td className={dash.td}>
-                            {s.fees.some((f) => f.balance > 0) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPayAllStudent(s);
-                                  setPayMode('monthly');
-                                }}
-                                className={dash.link}
-                              >
-                                Pay
-                              </button>
-                            )}
+                            <div className="flex flex-wrap gap-2">
+                              {s.fees.some((f) => f.balance > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPayAllStudent(s);
+                                    setPayMode('monthly');
+                                  }}
+                                  className={dash.link}
+                                >
+                                  Pay
+                                </button>
+                              )}
+                              {s.fees.some((f) => f.paid > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setReceiptStudent(s)}
+                                  className="text-sm font-medium text-slate-300 transition hover:text-teal-300"
+                                >
+                                  Receipt
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </motion.tr>
                       ))}
@@ -778,6 +750,17 @@ export default function FeesPage() {
           </>
         )}
       </GlassCard>
+
+      {receiptStudent && (
+        <ReceiptPrintModal
+          studentId={receiptStudent.student_id}
+          studentName={receiptStudent.student_name}
+          month={month}
+          year={year}
+          hasPaidFees={receiptStudent.fees.some((f) => f.paid > 0)}
+          onClose={() => setReceiptStudent(null)}
+        />
+      )}
 
       {payAllStudent && (
         <DashboardModal
@@ -1017,22 +1000,24 @@ export default function FeesPage() {
           <motion.div className={cn(dash.innerPanel, 'mb-4')}>
             <motion.div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Adjustment (optional)</motion.div>
             <motion.div className="space-y-3">
-              <select
+              <DashboardSelect
                 value={adjustmentType}
-                onChange={(e) => {
-                  const v = e.target.value as '' | 'add' | 'subtract';
-                  setAdjustmentType(v);
-                  if (!v) {
+                onChange={(v) => {
+                  const next = v as '' | 'add' | 'subtract';
+                  setAdjustmentType(next);
+                  if (!next) {
                     setAdjustmentAmount('');
                     setAdjustmentNotes('');
                   }
                 }}
-                className={dash.field}
-              >
-                <option value="">No adjustment</option>
-                <option value="add">Add to total (+)</option>
-                <option value="subtract">Subtract from total (−)</option>
-              </select>
+                allowEmpty
+                emptyLabel="No adjustment"
+                placeholder="No adjustment"
+                options={[
+                  { value: 'add', label: 'Add to total (+)' },
+                  { value: 'subtract', label: 'Subtract from total (−)' },
+                ]}
+              />
               {adjustmentType && (
                 <>
                   <motion.div>
@@ -1076,14 +1061,14 @@ export default function FeesPage() {
             </div>
             <div>
               <label className={dash.label}>Mode</label>
-              <select
+              <DashboardSelect
                 value={paymentForm.payment_mode}
-                onChange={(e) => setPaymentForm((f) => ({ ...f, payment_mode: e.target.value }))}
-                className={dash.field}
-              >
-                <option value="Cash">Cash</option>
-                <option value="Online">Online (Razorpay)</option>
-              </select>
+                onChange={(v) => setPaymentForm((f) => ({ ...f, payment_mode: v }))}
+                options={[
+                  { value: 'Cash', label: 'Cash' },
+                  { value: 'Online', label: 'Online (Razorpay)' },
+                ]}
+              />
             </div>
             <div>
               <label className={dash.label}>Notes</label>

@@ -1,6 +1,20 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, School, SchoolClass, Section, Student, FeeType, FeeStructure, StudentFeeStructureChoice, StudentFee, FeePayment, Subscription
+from .models import (
+    User,
+    School,
+    SchoolClass,
+    Section,
+    ClassSubject,
+    Student,
+    FeeType,
+    FeeStructure,
+    StudentFeeStructureChoice,
+    StudentFee,
+    FeePayment,
+    Subscription,
+    AdmissionEnquiry,
+)
 
 
 @admin.register(User)
@@ -27,11 +41,24 @@ class SectionAdmin(admin.ModelAdmin):
     list_filter = ['school_class']
 
 
+@admin.register(ClassSubject)
+class ClassSubjectAdmin(admin.ModelAdmin):
+    list_display = ['name', 'school_class', 'display_order']
+    list_filter = ['school_class']
+
+
 @admin.register(School)
 class SchoolAdmin(admin.ModelAdmin):
     list_display = ['name', 'city', 'plan', 'max_students', 'created_at']
     list_filter = ['plan', 'city']
     search_fields = ['name', 'city']
+
+
+@admin.register(AdmissionEnquiry)
+class AdmissionEnquiryAdmin(admin.ModelAdmin):
+    list_display = ["name", "phone", "school", "school_class", "status", "follow_up_date", "enquiry_date"]
+    list_filter = ["school", "status", "school_class"]
+    search_fields = ["name", "phone", "parent_name", "notes"]
 
 
 @admin.register(Student)

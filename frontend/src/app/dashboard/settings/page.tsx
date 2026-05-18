@@ -1,15 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Settings, Check } from 'lucide-react';
-import { getSchool, updateSchool, upgradeSchoolPlan } from '@/lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { Settings, Check, Upload, Building2, User } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getMe, getSchool, updateSchool, upgradeSchoolPlan, type SchoolRecord } from '@/lib/api';
+import { formatSchoolPlanLabel } from '@/lib/plan-labels';
+import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { PageLoading } from '@/components/dashboard/loading-state';
 import { Button } from '@/components/ui/button';
 import { dash } from '@/lib/dashboard-ui';
 import { cn } from '@/lib/utils';
+import { API_BASE_URL } from '@/lib/env';
 
 const MONTHS = [
   { value: 1, label: 'January' },
@@ -27,45 +30,187 @@ const MONTHS = [
 ];
 
 const PLANS = [
-  { key: 'basic', name: 'Basic', price: '₹299/month', students: 100, staff: 1, features: 'Core fee collection' },
-  { key: 'standard', name: 'Pro', price: '₹599/month', students: 300, staff: 2, features: 'All core features + reminders' },
-  { key: 'premium', name: 'Premium', price: '₹999/month', students: 'Unlimited', staff: 5, features: 'Advanced and scale features' },
+  { key: 'basic', name: 'Basic', price: '₹299/mo', students: 100, staff: 1 },
+  { key: 'standard', name: 'Pro', price: '₹599/mo', students: 300, staff: 2 },
+  { key: 'premium', name: 'Premium', price: '₹999/mo', students: '∞', staff: 5 },
 ] as const;
 
+const compactField = cn(dash.field, 'min-h-[36px] py-2 px-3 text-sm');
+const cardHead = 'border-b border-white/10 px-4 py-2';
+const cardBody = 'p-4';
+
+type OwnerInfo = {
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+};
+
+function resolveSchoolPayload(data: { results?: SchoolRecord[] } | SchoolRecord): SchoolRecord | null {
+  const list = 'results' in data && data.results ? data.results : data;
+  return Array.isArray(list) ? list[0] ?? null : (list as SchoolRecord);
+}
+
+function logoDisplayUrl(school: SchoolRecord | null): string | null {
+  if (!school) return null;
+  if (school.logo_url) return school.logo_url;
+  if (!school.logo) return null;
+  if (school.logo.startsWith('http')) return school.logo;
+  const origin = API_BASE_URL.replace(/\/api\/?$/, '');
+  const path = school.logo.startsWith('/') ? school.logo : `/${school.logo}`;
+  return `${origin}${path}`;
+}
+
+function SectionHead({
+  icon: Icon,
+  title,
+  hint,
+}: {
+  icon: typeof Building2;
+  title: string;
+  hint?: string;
+}) {
+  return (
+    <div className={cardHead}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-teal-400" />
+          <h2 className="text-sm font-semibold text-white">{title}</h2>
+        </div>
+        {hint && <span className="text-xs text-slate-500">{hint}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
-  const [school, setSchool] = useState<{ id: number; name: string; academic_year_start_month: number; fee_start_day?: number; plan?: string; max_students?: number; max_staff_logins?: number } | null>(null);
+  const { refreshUser, setUser } = useAuth();
+  const [school, setSchool] = useState<SchoolRecord | null>(null);
+  const [owner, setOwner] = useState<OwnerInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingAcademic, setSavingAcademic] = useState(false);
   const [upgradingPlan, setUpgradingPlan] = useState<string | null>(null);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [academicSaved, setAcademicSaved] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('Bihar');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [startMonth, setStartMonth] = useState(4);
   const [feeStartDay, setFeeStartDay] = useState(1);
 
   useEffect(() => {
-    getSchool()
-      .then(({ data }) => {
-        const list = data.results || data;
-        const s = Array.isArray(list) ? list[0] : list;
+    Promise.all([getSchool(), getMe()])
+      .then(([schoolRes, meRes]) => {
+        const s = resolveSchoolPayload(schoolRes.data);
         if (s) {
           setSchool(s);
+          setName(s.name || '');
+          setAddress(s.address || '');
+          setCity(s.city || '');
+          setState(s.state || 'Bihar');
+          setPhone(s.phone || '');
+          setEmail(s.email || '');
           setStartMonth(s.academic_year_start_month ?? 4);
           setFeeStartDay(s.fee_start_day ?? 1);
+          setLogoPreview(logoDisplayUrl(s));
+        }
+        const me = meRes.data;
+        if (me) {
+          setUser(me);
+          setOwner({
+            username: me.username || '',
+            email: me.email || '',
+            first_name: me.first_name || '',
+            last_name: me.last_name || '',
+            phone: me.phone || '',
+          });
         }
       })
       .catch(() => setSchool(null))
       .finally(() => setLoading(false));
-  }, []);
+  }, [setUser]);
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file (PNG, JPG, etc.).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Logo must be under 2 MB.');
+      return;
+    }
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!school) return;
-    setSaving(true);
+    setSavingProfile(true);
+    setProfileSaved(false);
     try {
-      await updateSchool(school.id, { academic_year_start_month: startMonth, fee_start_day: feeStartDay });
-      setSchool((prev) => prev ? { ...prev, academic_year_start_month: startMonth, fee_start_day: feeStartDay } : null);
+      let payload: FormData | Record<string, unknown>;
+      if (logoFile) {
+        const fd = new FormData();
+        fd.append('name', name.trim());
+        fd.append('address', address.trim());
+        fd.append('city', city.trim());
+        fd.append('state', state.trim());
+        fd.append('phone', phone.trim());
+        fd.append('email', email.trim());
+        fd.append('logo', logoFile);
+        payload = fd;
+      } else {
+        payload = {
+          name: name.trim(),
+          address: address.trim(),
+          city: city.trim(),
+          state: state.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+        };
+      }
+      const { data } = await updateSchool(school.id, payload);
+      setSchool(data);
+      setLogoFile(null);
+      setLogoPreview(logoDisplayUrl(data));
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
     } catch {
-      alert('Failed to update settings');
+      alert('Failed to update school profile');
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
+    }
+  };
+
+  const handleSaveAcademic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!school) return;
+    setSavingAcademic(true);
+    setAcademicSaved(false);
+    try {
+      const { data } = await updateSchool(school.id, {
+        academic_year_start_month: startMonth,
+        fee_start_day: feeStartDay,
+      });
+      setSchool(data);
+      setAcademicSaved(true);
+      setTimeout(() => setAcademicSaved(false), 2500);
+    } catch {
+      alert('Failed to update academic settings');
+    } finally {
+      setSavingAcademic(false);
     }
   };
 
@@ -76,10 +221,10 @@ export default function SettingsPage() {
     try {
       await upgradeSchoolPlan(school.id, plan);
       const { data } = await getSchool();
-      const list = data.results || data;
-      const s = Array.isArray(list) ? list[0] : list;
+      const s = resolveSchoolPayload(data);
       if (s) setSchool(s);
-      alert(`Plan changed to ${plan === 'standard' ? 'Pro' : plan === 'basic' ? 'Basic' : 'Premium'}.`);
+      await refreshUser();
+      alert(`Plan changed to ${formatSchoolPlanLabel(plan)}.`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data;
       alert(msg?.error || msg?.detail || 'Failed to change plan');
@@ -97,108 +242,218 @@ export default function SettingsPage() {
     );
   }
 
-  const planLabel = school.plan === 'standard' ? 'Pro' : school.plan === 'basic' ? 'Basic' : 'Premium';
+  const planLabel = formatSchoolPlanLabel(school.plan);
+  const trialEnd = school.trial_ends_at ? new Date(school.trial_ends_at).toLocaleDateString('en-IN') : null;
+  const registeredOn = school.created_at ? new Date(school.created_at).toLocaleDateString('en-IN') : null;
 
   return (
-    <PageShell>
+    <PageShell className="w-full">
       <PageHeader
         icon={Settings}
-        eyebrow="School configuration"
+        eyebrow="Configuration"
         title="Settings"
-        subtitle={`Manage academic calendar, fee rules, and subscription for ${school.name}.`}
+        subtitle="School profile, academic calendar, and plan."
       />
 
-      <GlassCard delay={0.05} className="max-w-xl">
-        <div className="border-b border-white/10 px-6 py-4">
-          <h2 className={dash.sectionTitle}>Academic year</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Set when your school&apos;s academic year starts. This affects academic year options in Fee Structure.
-          </p>
-        </div>
-        <form onSubmit={handleSave} className="space-y-4 p-6">
-          <div>
-            <label className={dash.label}>Academic year starts in</label>
-            <select value={startMonth} onChange={(e) => setStartMonth(parseInt(e.target.value))} className={dash.field}>
-              {MONTHS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={dash.label}>Fee start day (1-28)</label>
-            <input
-              type="number"
-              min={1}
-              max={28}
-              value={feeStartDay}
-              onChange={(e) => setFeeStartDay(Math.max(1, Math.min(28, parseInt(e.target.value || '1', 10))))}
-              className={dash.field}
-            />
-            <p className="mt-2 text-xs text-slate-500">
-              Example: if set to 1, joining on or before the start day can charge the current month. Joining on 28-Apr defaults charges from 1-May.
-            </p>
-          </div>
-          <Button type="submit" disabled={saving} className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0">
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </form>
-      </GlassCard>
-
-      <GlassCard delay={0.1}>
-        <div className="border-b border-white/10 px-6 py-4">
-          <h2 className={dash.sectionTitle}>Subscription plans</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Current plan: <span className="font-medium text-teal-300">{planLabel}</span>
-          </p>
-        </div>
-        <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-3">
-          {PLANS.map((plan, i) => {
-            const isCurrent = school.plan === plan.key;
-            return (
-              <motion.div
-                key={plan.key}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 + i * 0.06 }}
-                className={cn(
-                  'rounded-2xl border p-5 transition',
-                  isCurrent
-                    ? 'border-teal-500/40 bg-gradient-to-br from-teal-500/15 to-cyan-500/5 shadow-[0_0_30px_rgba(45,212,191,0.12)]'
-                    : 'border-white/10 bg-white/[0.03] hover:border-white/20'
+      <div className="space-y-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] xl:items-start">
+        <GlassCard delay={0.03}>
+          <SectionHead icon={Building2} title="School profile" hint="Receipts" />
+          <form onSubmit={handleSaveProfile} className={cardBody}>
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white/[0.04]">
+                {logoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoPreview} alt="" className="h-full w-full object-contain p-1" />
+                ) : (
+                  <Building2 className="h-6 w-6 text-slate-600" />
                 )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={handleLogoChange}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                className="h-8 rounded-lg border-white/15 bg-white/5 text-xs text-slate-200"
               >
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="font-semibold text-white">{plan.name}</h3>
-                  {isCurrent && (
-                    <span className={cn(dash.badge, dash.badgeTeal, 'inline-flex items-center gap-1')}>
-                      <Check className="h-3 w-3" />
-                      Current
-                    </span>
-                  )}
+                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                {logoPreview ? 'Change logo' : 'Upload logo'}
+              </Button>
+              <span className="text-xs text-slate-500">PNG/JPG, max 2 MB</span>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className={cn(dash.label, 'mb-1 text-xs')}>School name *</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} className={compactField} required />
+              </div>
+              <div>
+                <label className={cn(dash.label, 'mb-1 text-xs')}>Phone</label>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} className={compactField} inputMode="tel" />
+              </div>
+              <div>
+                <label className={cn(dash.label, 'mb-1 text-xs')}>Email</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={compactField} />
+              </div>
+              <div>
+                <label className={cn(dash.label, 'mb-1 text-xs')}>City</label>
+                <input value={city} onChange={(e) => setCity(e.target.value)} className={compactField} />
+              </div>
+              <div>
+                <label className={cn(dash.label, 'mb-1 text-xs')}>State</label>
+                <input value={state} onChange={(e) => setState(e.target.value)} className={compactField} />
+              </div>
+              <div>
+                <label className={cn(dash.label, 'mb-1 text-xs')}>Address</label>
+                <input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className={compactField}
+                  placeholder="Street, area"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
+              <p className="text-xs text-slate-500">
+                {registeredOn && <>Reg. {registeredOn}</>}
+                {registeredOn && trialEnd && ' · '}
+                {trialEnd && <>Trial {trialEnd}</>}
+                {' · '}
+                Plan <span className="text-teal-300">{planLabel}</span>
+              </p>
+              <Button type="submit" size="sm" disabled={savingProfile} className="h-8 rounded-lg border-0 bg-teal-600 px-4 text-xs">
+                {savingProfile ? 'Saving…' : profileSaved ? (
+                  <>
+                    <Check className="mr-1 h-3.5 w-3.5" /> Saved
+                  </>
+                ) : (
+                  'Save profile'
+                )}
+              </Button>
+            </div>
+          </form>
+        </GlassCard>
+
+          <div className="flex flex-col gap-4">
+          {owner && (
+            <GlassCard delay={0.05}>
+              <SectionHead icon={User} title="Account owner" />
+              <dl className={cn(cardBody, 'space-y-2.5 text-xs')}>
+                <div>
+                  <dt className="text-slate-500">Name</dt>
+                  <dd className="font-medium text-slate-200">
+                    {[owner.first_name, owner.last_name].filter(Boolean).join(' ') || '—'}
+                  </dd>
                 </div>
-                <p className="text-lg font-bold text-teal-300">{plan.price}</p>
-                <p className="mt-3 text-xs text-slate-500">Students: {plan.students}</p>
-                <p className="text-xs text-slate-500">Staff logins: {plan.staff}</p>
-                <p className="mt-2 text-xs text-slate-400">{plan.features}</p>
-                <Button
-                  type="button"
-                  disabled={isCurrent || upgradingPlan === plan.key}
-                  onClick={() => handleUpgradePlan(plan.key)}
-                  variant={isCurrent ? 'outline' : 'default'}
+                <div>
+                  <dt className="text-slate-500">Username</dt>
+                  <dd className="font-medium text-slate-200">{owner.username}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Email</dt>
+                  <dd className="truncate text-slate-200">{owner.email || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Phone</dt>
+                  <dd className="text-slate-200">{owner.phone || '—'}</dd>
+                </div>
+              </dl>
+            </GlassCard>
+          )}
+
+          <GlassCard delay={0.06}>
+            <SectionHead icon={Settings} title="Academic & fees" />
+            <form onSubmit={handleSaveAcademic} className={cardBody}>
+              <div className="space-y-3">
+                <div>
+                  <label className={cn(dash.label, 'mb-1 text-xs')}>Year starts</label>
+                  <DashboardSelect
+                    value={String(startMonth)}
+                    onChange={(v) => setStartMonth(parseInt(v, 10))}
+                    className={cn(dash.fieldSm, 'min-h-[36px] w-full')}
+                    options={MONTHS.map((m) => ({ value: String(m.value), label: m.label }))}
+                  />
+                </div>
+                <div>
+                  <label className={cn(dash.label, 'mb-1 text-xs')}>Fee start day</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    value={feeStartDay}
+                    onChange={(e) => setFeeStartDay(Math.max(1, Math.min(28, parseInt(e.target.value || '1', 10))))}
+                    className={compactField}
+                  />
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button type="submit" size="sm" disabled={savingAcademic} className="h-8 rounded-lg border-0 bg-teal-600 px-4 text-xs">
+                  {savingAcademic ? 'Saving…' : academicSaved ? (
+                    <>
+                      <Check className="mr-1 h-3.5 w-3.5" /> Saved
+                    </>
+                  ) : (
+                    'Save'
+                  )}
+                </Button>
+              </div>
+            </form>
+          </GlassCard>
+          </div>
+        </div>
+
+        <GlassCard delay={0.08}>
+          <SectionHead icon={Settings} title="Subscription" hint={`Current: ${planLabel}`} />
+          <div className={cn(cardBody, 'grid gap-2 sm:grid-cols-3')}>
+            {PLANS.map((plan) => {
+              const isCurrent = school.plan === plan.key;
+              return (
+                <div
+                  key={plan.key}
                   className={cn(
-                    'mt-4 w-full rounded-xl',
+                    'rounded-lg border p-3 transition',
                     isCurrent
-                      ? 'border-white/10 bg-white/5 text-slate-500'
-                      : 'bg-gradient-to-r from-teal-500 to-cyan-500 border-0'
+                      ? 'border-teal-500/40 bg-teal-500/10'
+                      : 'border-white/10 bg-white/[0.02] hover:border-white/20'
                   )}
                 >
-                  {isCurrent ? 'Current plan' : upgradingPlan === plan.key ? 'Updating…' : `Switch to ${plan.name}`}
-                </Button>
-              </motion.div>
-            );
-          })}
-        </div>
-      </GlassCard>
+                  <div className="mb-1 flex items-center justify-between gap-1">
+                    <span className="text-sm font-semibold text-white">{plan.name}</span>
+                    {isCurrent && (
+                      <span className={cn(dash.badge, dash.badgeTeal, 'px-1.5 py-0 text-[10px]')}>Current</span>
+                    )}
+                  </div>
+                  <p className="text-sm font-bold text-teal-300">{plan.price}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {plan.students} students · {plan.staff} staff
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isCurrent || upgradingPlan === plan.key}
+                    onClick={() => handleUpgradePlan(plan.key)}
+                    className={cn(
+                      'mt-2 h-7 w-full rounded-md text-xs',
+                      isCurrent ? 'border-white/10 bg-white/5 text-slate-500' : 'border-0 bg-teal-600'
+                    )}
+                    variant={isCurrent ? 'outline' : 'default'}
+                  >
+                    {isCurrent ? 'Active' : upgradingPlan === plan.key ? '…' : 'Switch'}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      </div>
     </PageShell>
   );
 }

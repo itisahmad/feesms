@@ -4,6 +4,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 
+const labelClass = 'block text-sm font-medium text-gray-700 mb-1.5';
+const inputClass =
+  'w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-500 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/25';
+
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -35,37 +39,48 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-teal-800">SchoolFee Pro</h1>
-          <p className="text-gray-600 mt-1">Fee Management for Bihar Schools</p>
+          <p className="mt-1 text-gray-600">Fee Management for Bihar Schools</p>
         </div>
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
-          <h2 className="text-xl font-semibold text-gray-800 mb-6">Sign in</h2>
+        <div className="auth-surface rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
+          <h2 className="mb-6 text-xl font-semibold text-gray-900">Sign in</h2>
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
+              <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <label htmlFor="username" className={labelClass}>
+                Username
+              </label>
               <input
+                id="username"
                 type="text"
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition"
+                className={inputClass}
                 placeholder="Enter username"
                 required
               />
-              <div className="mt-1 text-right">
-                <Link href="/forgot-password" className="text-xs text-teal-600 hover:underline">
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <label htmlFor="password" className="text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-medium text-teal-600 hover:text-teal-700 hover:underline"
+                >
                   Forgot password?
                 </Link>
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <input
+                id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition"
+                className={inputClass}
                 placeholder="Enter password"
                 required
               />
@@ -73,14 +88,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-medium transition disabled:opacity-50"
+              className="w-full rounded-lg bg-teal-600 py-3 font-medium text-white transition hover:bg-teal-700 disabled:opacity-50"
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-gray-600">
             Don&apos;t have an account?{' '}
-            <Link href="/register" className="text-teal-600 font-medium hover:underline">
+            <Link href="/register" className="font-medium text-teal-600 hover:underline">
               Register your school
             </Link>
           </p>

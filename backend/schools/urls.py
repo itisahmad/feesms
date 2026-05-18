@@ -6,6 +6,7 @@ from .views import (
     RegisterView, CurrentUserView, ForgotPasswordView, ResetPasswordView,
     SchoolViewSet, SchoolClassViewSet, StudentViewSet, FeeTypeViewSet, FeeStructureViewSet, StudentFeeViewSet,
     StaffUserViewSet, ExpenseCategoryViewSet, VendorViewSet, ExpenseViewSet, BudgetViewSet,
+    AdmissionEnquiryViewSet,
 )
 from .auth_views import SchoolTokenObtainPairView
 from .views_maintenance import maintenance_check
@@ -16,6 +17,7 @@ router = DefaultRouter()
 router.register(r'schools', SchoolViewSet, basename='school')
 router.register(r'classes', SchoolClassViewSet, basename='schoolclass')
 router.register(r'students', StudentViewSet, basename='student')
+router.register(r'enquiries', AdmissionEnquiryViewSet, basename='admissionenquiry')
 router.register(r'staff-users', StaffUserViewSet, basename='staffuser')
 router.register(r'fee-types', FeeTypeViewSet, basename='feetype')
 router.register(r'fee-structures', FeeStructureViewSet, basename='feestructure')

@@ -28,6 +28,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'schools',
     'payments',
+    'receipts',
+    'results',
 ]
 
 AUTH_USER_MODEL = 'schools.User'

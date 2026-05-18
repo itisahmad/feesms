@@ -34,7 +34,7 @@ from ..bulk_fee_collection import (
     pay_all_year_operation,
 )
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
-from ..permissions import IsSchoolOwner
+from ..permissions import HasModulePermission, IsSchoolOwner
 from ..services.fee_collection import (
     build_collection_summary,
     build_dashboard_stats,
@@ -43,7 +43,9 @@ from ..services.fee_collection import (
 
 
 class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    module_key = "fee_collection"
+    action_module_map = {"dashboard": "dashboard"}
     school_lookup = "student__school"
 
     def get_serializer_class(self):

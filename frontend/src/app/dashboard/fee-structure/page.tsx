@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown, ChevronUp, FileText, Plus } from 'lucide-react';
 import { getFeeTypes, createFeeType, updateFeeType, getFeeStructures, createFeeStructure, updateFeeStructure, deleteFeeStructure, getClasses, getSchool } from '@/lib/api';
+import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { InlineLoading, PageLoading } from '@/components/dashboard/loading-state';
@@ -314,17 +315,11 @@ export default function FeeStructurePage() {
                     placeholder="Fee type name"
                     className={dash.field}
                   />
-                  <select
+                  <DashboardSelect
                     value={editingFeeType.billing_period}
-                    onChange={(e) => setEditingFeeType((f) => ({ ...f, billing_period: e.target.value }))}
-                    className={dash.field}
-                  >
-                    {BILLING_PERIODS.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setEditingFeeType((f) => ({ ...f, billing_period: v }))}
+                    options={BILLING_PERIODS.map((p) => ({ value: p.value, label: p.label }))}
+                  />
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -349,17 +344,11 @@ export default function FeeStructurePage() {
                     placeholder="e.g. Smart Class, Activity"
                     className={dash.field}
                   />
-                  <select
+                  <DashboardSelect
                     value={newFeeType.billing_period}
-                    onChange={(e) => setNewFeeType((f) => ({ ...f, billing_period: e.target.value }))}
-                    className={dash.field}
-                  >
-                    {BILLING_PERIODS.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setNewFeeType((f) => ({ ...f, billing_period: v }))}
+                    options={BILLING_PERIODS.map((p) => ({ value: p.value, label: p.label }))}
+                  />
                   <button
                     type="button"
                     onClick={handleAddFeeType}
@@ -514,19 +503,14 @@ export default function FeeStructurePage() {
             </div>
             <div className="space-y-1">
               <label className={dash.label}>Class</label>
-              <select
+              <DashboardSelect
                 value={form.school_class}
-                onChange={(e) => setForm((f) => ({ ...f, school_class: e.target.value }))}
-                className={dash.field}
-                required
-              >
-                <option value="">Select</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, school_class: v }))}
+                allowEmpty
+                emptyLabel="Select"
+                placeholder="Select class"
+                options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
             </div>
             <div className="space-y-1">
               <label className={dash.label}>Amount (₹)</label>
@@ -590,13 +574,14 @@ export default function FeeStructurePage() {
             </div>
             <div className="space-y-1">
               <label className={dash.label}>Academic year</label>
-              <select value={form.academic_year} onChange={(e) => setForm((f) => ({ ...f, academic_year: e.target.value }))} className={dash.field}>
-                {(academicYearOptions.length ? academicYearOptions : getAcademicYearOptions(4)).map((ay) => (
-                  <option key={ay.value} value={ay.value}>
-                    {ay.label}
-                  </option>
-                ))}
-              </select>
+              <DashboardSelect
+                value={form.academic_year}
+                onChange={(v) => setForm((f) => ({ ...f, academic_year: v }))}
+                options={(academicYearOptions.length ? academicYearOptions : getAcademicYearOptions(4)).map((ay) => ({
+                  value: ay.value,
+                  label: ay.label,
+                }))}
+              />
             </div>
             <div className="flex items-center gap-2 lg:col-span-1">
               <input
@@ -649,18 +634,11 @@ export default function FeeStructurePage() {
             </div>
             <div className="space-y-1">
               <label className={dash.label}>Class</label>
-              <select
+              <DashboardSelect
                 value={editForm.school_class}
-                onChange={(e) => setEditForm((f) => (f ? { ...f, school_class: e.target.value } : null))}
-                className={dash.field}
-                required
-              >
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setEditForm((f) => (f ? { ...f, school_class: v } : null))}
+                options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
             </div>
             <div className="space-y-1">
               <label className={dash.label}>Amount (₹)</label>
@@ -724,17 +702,14 @@ export default function FeeStructurePage() {
             </div>
             <div className="space-y-1">
               <label className={dash.label}>Academic year</label>
-              <select
+              <DashboardSelect
                 value={editForm.academic_year}
-                onChange={(e) => setEditForm((f) => (f ? { ...f, academic_year: e.target.value } : null))}
-                className={dash.field}
-              >
-                {(academicYearOptions.length ? academicYearOptions : getAcademicYearOptions(4)).map((ay) => (
-                  <option key={ay.value} value={ay.value}>
-                    {ay.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setEditForm((f) => (f ? { ...f, academic_year: v } : null))}
+                options={(academicYearOptions.length ? academicYearOptions : getAcademicYearOptions(4)).map((ay) => ({
+                  value: ay.value,
+                  label: ay.label,
+                }))}
+              />
             </div>
             <div className="flex items-center gap-2">
               <input

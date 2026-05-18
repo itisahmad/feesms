@@ -7,7 +7,6 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, CalendarDays, ChevronRight, Layers } from 'lucide-react';
 import {
   getCollectionSummary,
-  getReceipt,
   generateFees,
   payAllPending,
   payAllYear,
@@ -16,10 +15,12 @@ import {
   createFeeCollectionOrder,
   verifyFeeCollectionPayment,
 } from '@/lib/api';
+import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { InlineLoading } from '@/components/dashboard/loading-state';
 import { DashboardModal } from '@/components/dashboard/modal';
+import { ReceiptPrintModal } from '@/components/dashboard/receipt-print-modal';
 import { Button } from '@/components/ui/button';
 import { dash } from '@/lib/dashboard-ui';
 import {
@@ -110,11 +111,17 @@ export default function ClassFeesPage() {
     }
     return currentMonth;
   })();
+  const initialYear = (() => {
+    const qYear = parseInt(searchParams.get('year') || '', 10);
+    if (!Number.isNaN(qYear) && qYear >= 2000 && qYear <= currentYear + 1) return qYear;
+    return currentYear;
+  })();
   const [month, setMonth] = useState(initialMonth);
-  const year = currentYear;
+  const year = initialYear;
   const [data, setData] = useState<CollectionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [payAllStudent, setPayAllStudent] = useState<StudentSummary | null>(null);
+  const [receiptStudent, setReceiptStudent] = useState<StudentSummary | null>(null);
   const [payMode, setPayMode] = useState<'monthly' | 'yearly' | 'all_pending'>('monthly');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [paymentPreview, setPaymentPreview] = useState<PaymentPreview | null>(null);
@@ -401,37 +408,6 @@ export default function ClassFeesPage() {
     }
   };
 
-  const handleDownloadReceipt = async (studentFeeId: number, studentName: string) => {
-    try {
-      const { data } = await getReceipt(studentFeeId);
-      const url = URL.createObjectURL(new Blob([data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipt-${studentName}-${month}-${year}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      alert('Failed to download receipt');
-    }
-  };
-
-  const handlePrintReceipt = async (studentFeeId: number, studentName: string) => {
-    try {
-      const { data } = await getReceipt(studentFeeId);
-      const blob = new Blob([data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, '_blank', 'width=800,height=600');
-      if (win) {
-        win.onload = () => setTimeout(() => win!.print(), 500);
-      } else {
-        handleDownloadReceipt(studentFeeId, studentName);
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      alert('Failed to print receipt');
-    }
-  };
-
   const classSummary = data?.class_wise.find((c) => c.class_name === className);
   const students = data?.student_wise.filter((s) => s.class_name === className) || [];
 
@@ -464,18 +440,16 @@ export default function ClassFeesPage() {
             <CalendarDays className="h-3.5 w-3.5" />
             Current month ({MONTHS[currentMonth]} {currentYear})
           </div>
-          <select
-            value={month}
-            onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-            className={dash.fieldSm}
+          <DashboardSelect
+            value={String(month)}
+            onChange={(v) => setMonth(parseInt(v, 10))}
+            className={cn(dash.fieldSm, 'min-h-[38px] min-w-[140px] py-2')}
             aria-label="Reporting month"
-          >
-            {availableMonths.map(({ value, label }) => (
-              <option key={value} value={value}>
-                {label} {currentYear}
-              </option>
-            ))}
-          </select>
+            options={availableMonths.map(({ value, label }) => ({
+              value: String(value),
+              label: `${label} ${currentYear}`,
+            }))}
+          />
           <Button
             onClick={handleGenerateFees}
             disabled={generating || !canGenerateFees}
@@ -664,33 +638,46 @@ export default function ClassFeesPage() {
                             })()}
                           </td>
                           <td className={dash.td} onClick={(e) => e.stopPropagation()}>
-                            {s.fees.some((f) => f.balance > 0) && (
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPayAllStudent(s);
-                                    setPayMode('monthly');
-                                  }}
-                                  className={dash.link}
-                                >
-                                  Pay
-                                </button>
-                                {s.detailed_status?.current_month_paid && !s.detailed_status?.academic_year_complete && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {s.fees.some((f) => f.balance > 0) && (
+                                <>
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setPayAllStudent(s);
-                                      setPayMode('yearly');
+                                      setPayMode('monthly');
                                     }}
-                                    className="text-sm font-medium text-amber-400 transition hover:text-amber-300"
-                                    title="Complete academic year payment with potential discounts"
+                                    className={dash.link}
                                   >
-                                    Complete Year
+                                    Pay
                                   </button>
-                                )}
-                              </div>
-                            )}
+                                  {s.detailed_status?.current_month_paid && !s.detailed_status?.academic_year_complete && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPayAllStudent(s);
+                                        setPayMode('yearly');
+                                      }}
+                                      className="text-sm font-medium text-amber-400 transition hover:text-amber-300"
+                                      title="Complete academic year payment with potential discounts"
+                                    >
+                                      Complete Year
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              {s.fees.some((f) => f.paid > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReceiptStudent(s);
+                                  }}
+                                  className="text-sm font-medium text-slate-300 transition hover:text-teal-300"
+                                >
+                                  Receipt
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </motion.tr>
                         {expandedRow === s.student_id && (
@@ -724,26 +711,18 @@ export default function ClassFeesPage() {
                                           <div key={f.student_fee_id} className="flex flex-wrap items-center gap-2 text-sm">
                                             <span className="text-slate-400">{f.fee_type}:</span>
                                             <span className="text-amber-400">₹{f.balance.toLocaleString('en-IN')} pending</span>
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handlePrintReceipt(f.student_fee_id, s.student_name);
-                                              }}
-                                              className="text-xs text-teal-400 underline-offset-4 hover:text-teal-300 hover:underline"
-                                            >
-                                              Print
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDownloadReceipt(f.student_fee_id, s.student_name);
-                                              }}
-                                              className="text-xs text-slate-500 underline-offset-4 hover:text-slate-300 hover:underline"
-                                            >
-                                              Download
-                                            </button>
+                                            {f.paid > 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setReceiptStudent(s);
+                                                }}
+                                                className="text-xs text-teal-400 underline-offset-4 hover:text-teal-300 hover:underline"
+                                              >
+                                                Receipt
+                                              </button>
+                                            )}
                                           </div>
                                         ))}
                                       </div>
@@ -762,6 +741,17 @@ export default function ClassFeesPage() {
           </>
         )}
       </GlassCard>
+
+      {receiptStudent && (
+        <ReceiptPrintModal
+          studentId={receiptStudent.student_id}
+          studentName={receiptStudent.student_name}
+          month={month}
+          year={year}
+          hasPaidFees={receiptStudent.fees.some((f) => f.paid > 0)}
+          onClose={() => setReceiptStudent(null)}
+        />
+      )}
 
       {payAllStudent && (
         <DashboardModal
@@ -1049,22 +1039,24 @@ export default function ClassFeesPage() {
           <motion.div className={cn(dash.innerPanel, 'mb-4')}>
             <motion.div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Adjustment (optional)</motion.div>
             <motion.div className="space-y-3">
-              <select
+              <DashboardSelect
                 value={adjustmentType}
-                onChange={(e) => {
-                  const v = e.target.value as '' | 'add' | 'subtract';
-                  setAdjustmentType(v);
-                  if (!v) {
+                onChange={(v) => {
+                  const next = v as '' | 'add' | 'subtract';
+                  setAdjustmentType(next);
+                  if (!next) {
                     setAdjustmentAmount('');
                     setAdjustmentNotes('');
                   }
                 }}
-                className={dash.field}
-              >
-                <option value="">No adjustment</option>
-                <option value="add">Add to total (+)</option>
-                <option value="subtract">Subtract from total (−)</option>
-              </select>
+                allowEmpty
+                emptyLabel="No adjustment"
+                placeholder="No adjustment"
+                options={[
+                  { value: 'add', label: 'Add to total (+)' },
+                  { value: 'subtract', label: 'Subtract from total (−)' },
+                ]}
+              />
               {adjustmentType && (
                 <>
                   <motion.div>
@@ -1108,14 +1100,14 @@ export default function ClassFeesPage() {
             </div>
             <div>
               <label className={dash.label}>Mode</label>
-              <select
+              <DashboardSelect
                 value={paymentForm.payment_mode}
-                onChange={(e) => setPaymentForm((f) => ({ ...f, payment_mode: e.target.value }))}
-                className={dash.field}
-              >
-                <option value="Cash">Cash</option>
-                <option value="Online">Online (Razorpay)</option>
-              </select>
+                onChange={(v) => setPaymentForm((f) => ({ ...f, payment_mode: v }))}
+                options={[
+                  { value: 'Cash', label: 'Cash' },
+                  { value: 'Online', label: 'Online (Razorpay)' },
+                ]}
+              />
             </div>
             <div>
               <label className={dash.label}>Notes</label>

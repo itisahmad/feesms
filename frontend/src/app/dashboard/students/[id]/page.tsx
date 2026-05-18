@@ -7,6 +7,8 @@ import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   CalendarDays,
+  ChevronRight,
+  ClipboardCheck,
   Hash,
   IdCard,
   IndianRupee,
@@ -14,11 +16,20 @@ import {
   Receipt,
   UserCircle,
 } from 'lucide-react';
-import { getStudentFeeHistory, getReceipt, getFeeStructures, updateStudent } from '@/lib/api';
+import {
+  getStudentFeeHistory,
+  getFeeStructures,
+  getStudentPublishedResults,
+  updateStudent,
+  type StudentPublishedResultSummary,
+} from '@/lib/api';
+import { StudentResultReportModal } from '@/components/dashboard/student-result-report-modal';
+import { usePermissions } from '@/hooks/use-permissions';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { InlineLoading, PageLoading } from '@/components/dashboard/loading-state';
 import { DashboardModal } from '@/components/dashboard/modal';
+import { ReceiptPrintModal } from '@/components/dashboard/receipt-print-modal';
 import { Button } from '@/components/ui/button';
 import { dash } from '@/lib/dashboard-ui';
 import { cn } from '@/lib/utils';
@@ -31,9 +42,18 @@ interface FeeStructureItem {
   amount: string;
 }
 
+const formatExamDate = (value: string | null) => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
 export default function StudentDetailPage() {
   const params = useParams();
   const id = parseInt(params.id as string);
+  const { canView } = usePermissions();
+  const showResults = canView('results');
   const [data, setData] = useState<{
     student: {
       id: number;
@@ -58,6 +78,10 @@ export default function StudentDetailPage() {
   const [feeStructures, setFeeStructures] = useState<FeeStructureItem[]>([]);
   const [editChoices, setEditChoices] = useState<{ fee_structure_id: number; effective_from: string }[]>([]);
   const [savingFees, setSavingFees] = useState(false);
+  const [receiptPeriod, setReceiptPeriod] = useState<{ month: number; year: number } | null>(null);
+  const [publishedResults, setPublishedResults] = useState<StudentPublishedResultSummary[]>([]);
+  const [resultsLoading, setResultsLoading] = useState(false);
+  const [selectedExam, setSelectedExam] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     getStudentFeeHistory(id)
@@ -65,6 +89,15 @@ export default function StudentDetailPage() {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (!showResults || !id || Number.isNaN(id)) return;
+    setResultsLoading(true);
+    getStudentPublishedResults(id)
+      .then(({ data }) => setPublishedResults(data.results || []))
+      .catch(() => setPublishedResults([]))
+      .finally(() => setResultsLoading(false));
+  }, [id, showResults]);
 
   useEffect(() => {
     if (editingFees && data?.student?.school_class) {
@@ -116,26 +149,6 @@ export default function StudentDetailPage() {
       alert('Failed to update fee choices');
     } finally {
       setSavingFees(false);
-    }
-  };
-
-  const handlePrintReceipt = async (studentFeeId: number) => {
-    try {
-      const { data } = await getReceipt(studentFeeId);
-      const blob = new Blob([data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, '_blank', 'width=800,height=600');
-      if (win) {
-        win.onload = () => win.print();
-      } else {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'receipt.pdf';
-        a.click();
-      }
-      URL.revokeObjectURL(url);
-    } catch {
-      alert('Failed to load receipt');
     }
   };
 
@@ -293,6 +306,62 @@ export default function StudentDetailPage() {
         </div>
       </GlassCard>
 
+      {showResults && (
+        <GlassCard delay={0.11}>
+          <div className="border-b border-white/10 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className={cn(dash.sectionTitle, 'flex items-center gap-2')}>
+                <ClipboardCheck className="h-5 w-5 text-teal-400" />
+                Exam results
+              </h2>
+              <Link href="/dashboard/results" className={cn(dash.link, 'text-xs')}>
+                Manage exams
+              </Link>
+            </div>
+          </div>
+          <div className="p-6">
+            {resultsLoading ? (
+              <InlineLoading message="Loading results…" />
+            ) : publishedResults.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No published results yet. Publish an exam from the Results module to show it here.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {publishedResults.map((exam) => (
+                  <button
+                    key={exam.exam_id}
+                    type="button"
+                    onClick={() => setSelectedExam({ id: exam.exam_id, name: exam.exam_name })}
+                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:border-teal-500/30 hover:bg-teal-500/5"
+                  >
+                    <div>
+                      <p className="font-medium text-slate-200">{exam.exam_name}</p>
+                      <p className="text-xs text-slate-500">
+                        {exam.class_name}
+                        {exam.exam_date ? ` · ${formatExamDate(exam.exam_date)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {exam.total_obtained != null && (
+                        <span className="text-sm text-slate-400">
+                          {exam.total_obtained}/{exam.total_max}
+                          {exam.percentage != null ? ` (${exam.percentage}%)` : ''}
+                        </span>
+                      )}
+                      {exam.overall_grade && (
+                        <span className={cn(dash.badge, dash.badgeTeal)}>Grade {exam.overall_grade}</span>
+                      )}
+                      <ChevronRight className="h-4 w-4 text-teal-400" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </GlassCard>
+      )}
+
       <GlassCard delay={0.12}>
         <div className="border-b border-white/10 px-6 py-4">
           <h2 className={dash.sectionTitle}>Fee &amp; payment history</h2>
@@ -328,10 +397,22 @@ export default function StudentDetailPage() {
                   <h3 className="font-medium text-slate-200">
                     {MONTHS[m.month]} {m.year}
                   </h3>
-                  <span className="text-sm text-slate-400">
-                    Due: ₹{m.total_due.toLocaleString('en-IN')} · Paid: ₹
-                    {m.total_paid.toLocaleString('en-IN')}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-sm text-slate-400">
+                      Due: ₹{m.total_due.toLocaleString('en-IN')} · Paid: ₹
+                      {m.total_paid.toLocaleString('en-IN')}
+                    </span>
+                    {m.total_paid > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setReceiptPeriod({ month: m.month, year: m.year })}
+                        className={cn(dash.link, 'inline-flex items-center gap-1 text-sm')}
+                      >
+                        <Receipt className="h-3.5 w-3.5" />
+                        Monthly receipt
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {m.fees.map((f) => (
@@ -350,14 +431,6 @@ export default function StudentDetailPage() {
                           </span>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handlePrintReceipt(f.id)}
-                        className={cn(dash.link, 'inline-flex items-center gap-1')}
-                      >
-                        <Receipt className="h-3.5 w-3.5" />
-                        Print receipt
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -380,6 +453,27 @@ export default function StudentDetailPage() {
           </div>
         )}
       </GlassCard>
+
+      {selectedExam && (
+        <StudentResultReportModal
+          examId={selectedExam.id}
+          examName={selectedExam.name}
+          studentId={id}
+          studentName={student.name}
+          onClose={() => setSelectedExam(null)}
+        />
+      )}
+
+      {receiptPeriod && (
+        <ReceiptPrintModal
+          studentId={id}
+          studentName={student.name}
+          month={receiptPeriod.month}
+          year={receiptPeriod.year}
+          hasPaidFees
+          onClose={() => setReceiptPeriod(null)}
+        />
+      )}
 
       {editingFees && (
         <DashboardModal

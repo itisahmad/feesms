@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Users, Plus, Search } from 'lucide-react';
 import { getStudents, createStudent, updateStudent, getClasses, getFeeStructures, getStudentFeeHistory, getSchool } from '@/lib/api';
+import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { InlineLoading } from '@/components/dashboard/loading-state';
@@ -363,32 +364,26 @@ export default function StudentsPage() {
             </div>
             <div>
               <label className={dash.label}>Class *</label>
-              <select
+              <DashboardSelect
                 value={form.school_class}
-                onChange={(e) => setForm((f) => ({ ...f, school_class: e.target.value }))}
-                className={dash.field}
-                required
-              >
-                <option value="">Select class</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, school_class: v, section: '' }))}
+                allowEmpty
+                emptyLabel="Select class"
+                placeholder="Select class"
+                options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
             </div>
             <div>
               <label className={dash.label}>Section *</label>
-              <select
+              <DashboardSelect
                 value={form.section}
-                onChange={(e) => setForm((f) => ({ ...f, section: e.target.value }))}
-                className={dash.field}
-                required
+                onChange={(v) => setForm((f) => ({ ...f, section: v }))}
+                allowEmpty
+                emptyLabel="Select section"
+                placeholder="Select section"
                 disabled={!form.school_class || sectionsForClass.length === 0}
-              >
-                <option value="">Select section</option>
-                {sectionsForClass.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                options={sectionsForClass.map((s) => ({ value: String(s.id), label: s.name }))}
+              />
               {form.school_class && sectionsForClass.length === 0 && (
                 <p className="mt-1 text-xs text-amber-400">Add sections to this class first</p>
               )}
@@ -547,27 +542,25 @@ export default function StudentsPage() {
               className={cn(dash.field, 'pl-10')}
             />
           </div>
-          <select
+          <DashboardSelect
             value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className={cn(dash.field, 'w-full sm:w-48')}
-          >
-            <option value="">All classes</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select
+            onChange={setClassFilter}
+            allowEmpty
+            emptyLabel="All classes"
+            placeholder="All classes"
+            className="w-full sm:w-48"
+            options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+          />
+          <DashboardSelect
             value={sectionFilter}
-            onChange={(e) => setSectionFilter(e.target.value)}
-            className={cn(dash.field, 'w-full sm:w-48')}
+            onChange={setSectionFilter}
+            allowEmpty
+            emptyLabel="All sections"
+            placeholder="All sections"
+            className="w-full sm:w-48"
             disabled={!classFilter}
-          >
-            <option value="">All sections</option>
-            {filterSections.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+            options={filterSections.map((s) => ({ value: String(s.id), label: s.name }))}
+          />
         </div>
 
         {loading ? (

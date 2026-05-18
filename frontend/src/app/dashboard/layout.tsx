@@ -8,9 +8,12 @@ import {
   LayoutDashboard,
   GraduationCap,
   Users,
+  ClipboardList,
   FileText,
   Wallet,
   CreditCard,
+  Receipt,
+  ClipboardCheck,
   Settings,
   UserCog,
   LogOut,
@@ -18,21 +21,27 @@ import {
   PanelLeftClose,
   PanelLeft,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { MeshBackground } from '@/components/dashboard/mesh-background';
+import { formatSchoolPlanLabel } from '@/lib/plan-labels';
+import { firstAllowedPath, pathnameToModuleKey } from '@/lib/staff-modules';
 import { cn } from '@/lib/utils';
 
 const SIDEBAR_WIDTH = 260;
 const STORAGE_KEY = 'dashboard-sidebar-collapsed';
 
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/classes', label: 'Classes', icon: GraduationCap },
-  { href: '/dashboard/students', label: 'Students', icon: Users },
-  { href: '/dashboard/fee-structure', label: 'Fee Structure', icon: FileText },
-  { href: '/dashboard/fees', label: 'Fee Collection', icon: Wallet },
-  { href: '/dashboard/payments', label: 'Payments', icon: CreditCard },
-  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, moduleKey: 'dashboard' },
+  { href: '/dashboard/classes', label: 'Classes', icon: GraduationCap, moduleKey: 'classes' },
+  { href: '/dashboard/students', label: 'Students', icon: Users, moduleKey: 'students' },
+  { href: '/dashboard/enquiries', label: 'Enquiries', icon: ClipboardList, moduleKey: 'enquiries' },
+  { href: '/dashboard/fee-structure', label: 'Fee Structure', icon: FileText, moduleKey: 'fee_structure' },
+  { href: '/dashboard/fees', label: 'Fee Collection', icon: Wallet, moduleKey: 'fee_collection' },
+  { href: '/dashboard/payments', label: 'Payments', icon: CreditCard, moduleKey: 'payments' },
+  { href: '/dashboard/receipt-templates', label: 'Receipt Templates', icon: Receipt, moduleKey: 'receipt_templates' },
+  { href: '/dashboard/results', label: 'Results', icon: ClipboardCheck, moduleKey: 'results' },
+  { href: '/dashboard/settings', label: 'Settings', icon: Settings, moduleKey: 'settings' },
 ];
 
 export default function DashboardLayout({
@@ -41,6 +50,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, loading, logout } = useAuth();
+  const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -59,6 +69,21 @@ export default function DashboardLayout({
       window.location.href = '/login';
     }
   }, [user, loading]);
+
+  const isOwner = user?.role === 'owner' || user?.is_owner;
+  const allowedModules = user?.allowed_modules ?? [];
+
+  useEffect(() => {
+    if (loading || !user || isOwner) return;
+    const fallback = firstAllowedPath(allowedModules);
+    const moduleKey = pathnameToModuleKey(pathname);
+    if (!moduleKey) return;
+    if (moduleKey === 'staff' || (moduleKey && !allowedModules.includes(moduleKey))) {
+      if (fallback && pathname !== fallback) {
+        router.replace(fallback);
+      }
+    }
+  }, [loading, user, isOwner, pathname, allowedModules, router]);
 
   const toggleSidebar = () => {
     setCollapsed((prev) => {
@@ -87,17 +112,37 @@ export default function DashboardLayout({
     );
   }
 
-  const menuItems =
-    user.role === 'owner'
-      ? [...nav, { href: '/dashboard/staff', label: 'Staff', icon: UserCog }]
-      : nav;
+  if (!isOwner && allowedModules.length === 0) {
+    return (
+      <motion.div
+        className="relative flex min-h-screen flex-col items-center justify-center px-6 text-center"
+        style={{ background: 'var(--dash-mesh-bg)' }}
+      >
+        <MeshBackground />
+        <h1 className="relative z-10 text-xl font-semibold text-white">No module access</h1>
+        <p className="relative z-10 mt-2 max-w-md text-slate-400">
+          Your account has no dashboard modules assigned. Ask the school owner to update your permissions under Staff.
+        </p>
+        <button
+          type="button"
+          onClick={logout}
+          className="relative z-10 mt-6 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300 hover:bg-white/10"
+        >
+          Sign out
+        </button>
+      </motion.div>
+    );
+  }
 
-  const planLabel =
-    user.school_plan === 'basic'
-      ? 'Basic'
-      : user.school_plan === 'premium'
-        ? 'Premium'
-        : 'Pro';
+  const menuItems = (() => {
+    const staffNav = { href: '/dashboard/staff', label: 'Staff', icon: UserCog, moduleKey: 'staff' };
+    if (isOwner) {
+      return [...nav, staffNav];
+    }
+    return nav.filter((item) => allowedModules.includes(item.moduleKey));
+  })();
+
+  const planLabel = formatSchoolPlanLabel(user.school_plan);
 
   const mainMargin = mounted && collapsed ? 0 : SIDEBAR_WIDTH;
 

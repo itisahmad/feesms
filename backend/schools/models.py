@@ -24,6 +24,11 @@ class User(AbstractUser):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='owner')
     phone = models.CharField(max_length=20, blank=True)
     school = models.ForeignKey('School', on_delete=models.CASCADE, null=True, blank=True, related_name='staff')
+    module_permissions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Per-module access for staff: view, create, edit, delete, actions.",
+    )
 
 
 class School(models.Model):
@@ -111,6 +116,21 @@ class Section(models.Model):
 
     def __str__(self):
         return f"{self.school_class.name} - {self.name}"
+
+
+class ClassSubject(models.Model):
+    """Subjects taught in a class — optional, can be added anytime after class is created."""
+    school_class = models.ForeignKey(SchoolClass, on_delete=models.CASCADE, related_name='subjects')
+    name = models.CharField(max_length=100)  # e.g. Mathematics, English
+    display_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_order', 'name']
+        unique_together = ['school_class', 'name']
+
+    def __str__(self):
+        return f"{self.school_class.name} — {self.name}"
 
 
 class Student(models.Model):
@@ -534,6 +554,72 @@ class MessageUsage(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class AdmissionEnquiry(models.Model):
+    """Prospective admission enquiries for follow-up."""
+
+    STATUS_NEW = "new"
+    STATUS_CONTACTED = "contacted"
+    STATUS_VISITED = "visited"
+    STATUS_ADMITTED = "admitted"
+    STATUS_LOST = "lost"
+
+    STATUS_CHOICES = [
+        (STATUS_NEW, "New"),
+        (STATUS_CONTACTED, "Contacted"),
+        (STATUS_VISITED, "Visited"),
+        (STATUS_ADMITTED, "Admitted"),
+        (STATUS_LOST, "Not interested"),
+    ]
+
+    SOURCE_WALK_IN = "walk_in"
+    SOURCE_PHONE = "phone"
+    SOURCE_REFERRAL = "referral"
+    SOURCE_ONLINE = "online"
+    SOURCE_OTHER = "other"
+
+    SOURCE_CHOICES = [
+        (SOURCE_WALK_IN, "Walk-in"),
+        (SOURCE_PHONE, "Phone call"),
+        (SOURCE_REFERRAL, "Referral"),
+        (SOURCE_ONLINE, "Online"),
+        (SOURCE_OTHER, "Other"),
+    ]
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="admission_enquiries")
+    name = models.CharField(max_length=200)
+    phone = models.CharField(max_length=20)
+    parent_name = models.CharField(max_length=200, blank=True)
+    email = models.EmailField(blank=True)
+    school_class = models.ForeignKey(
+        SchoolClass,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="admission_enquiries",
+    )
+    enquiry_date = models.DateField()
+    follow_up_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WALK_IN)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_enquiries",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["follow_up_date", "-created_at"]
+        verbose_name_plural = "Admission enquiries"
+
+    def __str__(self):
+        return f"{self.name} ({self.phone})"
 
 
 class FeeAutomatedReminderLog(models.Model):

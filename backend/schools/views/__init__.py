@@ -3,6 +3,7 @@ from .auth import CurrentUserView, ForgotPasswordView, RegisterView, ResetPasswo
 from .expenses import BudgetViewSet, ExpenseCategoryViewSet, ExpenseViewSet, VendorViewSet
 from .fees import StudentFeeViewSet
 from .school import SchoolClassViewSet, SchoolViewSet
+from .enquiries import AdmissionEnquiryViewSet
 from .students import FeeStructureViewSet, FeeTypeViewSet, StudentViewSet
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "SchoolViewSet",
     "SchoolClassViewSet",
     "StudentViewSet",
+    "AdmissionEnquiryViewSet",
     "FeeTypeViewSet",
     "FeeStructureViewSet",
     "StudentFeeViewSet",

@@ -4,20 +4,77 @@ REST API Serializers
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from datetime import date
-from .models import (User, School, SchoolClass, Section, Student, FeeType, FeeStructure, 
-                     StudentFeeStructureChoice, StudentFee, FeePayment, 
-                     ExpenseCategory, Vendor, Expense, Budget)
+from .models import (
+    User,
+    School,
+    SchoolClass,
+    Section,
+    ClassSubject,
+    Student,
+    FeeType,
+    FeeStructure,
+    StudentFeeStructureChoice,
+    StudentFee,
+    FeePayment,
+    ExpenseCategory,
+    Vendor,
+    Expense,
+    Budget,
+    AdmissionEnquiry,
+)
 from .default_fee_types import ensure_default_fee_types_for_school
+from .module_permissions import (
+    MODULE_DEFINITIONS,
+    PERMISSION_KEYS,
+    normalize_module_permissions,
+    permissions_payload_for_user,
+)
+
+
+class ModulePermissionsField(serializers.JSONField):
+    def to_representation(self, value):
+        return normalize_module_permissions(value)
+
+    def to_internal_value(self, data):
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise serializers.ValidationError("module_permissions must be an object.")
+        return normalize_module_permissions(data)
 
 
 class UserSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
     school_plan = serializers.CharField(source='school.plan', read_only=True)
+    module_permissions = ModulePermissionsField(required=False)
+    allowed_modules = serializers.SerializerMethodField()
+    is_owner = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'is_active', 'school', 'school_name', 'school_plan']
-        read_only_fields = ['school']
+        fields = [
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'role',
+            'phone',
+            'is_active',
+            'school',
+            'school_name',
+            'school_plan',
+            'module_permissions',
+            'allowed_modules',
+            'is_owner',
+        ]
+        read_only_fields = ['school', 'allowed_modules', 'is_owner']
+
+    def get_allowed_modules(self, obj):
+        return permissions_payload_for_user(obj)["allowed_modules"]
+
+    def get_is_owner(self, obj):
+        return obj.role == "owner"
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -81,33 +138,40 @@ class RegisterSerializer(serializers.ModelSerializer):
 class StaffUserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password2 = serializers.CharField(write_only=True)
+    module_permissions = ModulePermissionsField(required=False)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone', 'role', 'password', 'password2']
+        fields = [
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'phone',
+            'password',
+            'password2',
+            'module_permissions',
+        ]
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({'password': "Passwords don't match."})
-        if attrs.get('role') == 'owner':
-            raise serializers.ValidationError({'role': 'Owner role cannot be assigned to staff login.'})
         return attrs
 
     def create(self, validated_data):
         validated_data.pop('password2')
         password = validated_data.pop('password')
+        validated_data.setdefault('role', 'staff')
         return User.objects.create_user(password=password, **validated_data)
 
 
 class StaffUserUpdateSerializer(serializers.ModelSerializer):
+    module_permissions = ModulePermissionsField(required=False)
+
     class Meta:
         model = User
-        fields = ['email', 'first_name', 'last_name', 'phone', 'role', 'is_active']
-
-    def validate_role(self, value):
-        if value == 'owner':
-            raise serializers.ValidationError('Owner role cannot be assigned to staff login.')
-        return value
+        fields = ['email', 'first_name', 'last_name', 'phone', 'is_active', 'module_permissions']
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
@@ -127,10 +191,44 @@ class ResetPasswordSerializer(serializers.Serializer):
 
 
 class SchoolSerializer(serializers.ModelSerializer):
+    logo_url = serializers.SerializerMethodField()
+
     class Meta:
         model = School
-        fields = ['id', 'name', 'address', 'city', 'state', 'phone', 'email', 'logo', 'plan',
-                  'max_students', 'max_staff_logins', 'academic_year_start_month', 'fee_start_day', 'trial_ends_at', 'created_at']
+        fields = [
+            'id',
+            'name',
+            'address',
+            'city',
+            'state',
+            'phone',
+            'email',
+            'logo',
+            'logo_url',
+            'plan',
+            'max_students',
+            'max_staff_logins',
+            'academic_year_start_month',
+            'fee_start_day',
+            'trial_ends_at',
+            'created_at',
+        ]
+        read_only_fields = [
+            'plan',
+            'max_students',
+            'max_staff_logins',
+            'trial_ends_at',
+            'created_at',
+            'logo_url',
+        ]
+
+    def get_logo_url(self, obj):
+        if not obj.logo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.logo.url)
+        return obj.logo.url
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -139,19 +237,33 @@ class SectionSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'display_order']
 
 
+class ClassSubjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClassSubject
+        fields = ['id', 'name', 'display_order', 'created_at']
+
+
 class SchoolClassSerializer(serializers.ModelSerializer):
     sections = SectionSerializer(many=True, read_only=True)
+    subjects = ClassSubjectSerializer(many=True, read_only=True)
     section_names = serializers.ListField(child=serializers.CharField(), write_only=True, required=False)
 
     class Meta:
         model = SchoolClass
-        fields = ['id', 'name', 'display_order', 'sections', 'section_names', 'created_at']
+        fields = [
+            'id', 'name', 'display_order', 'sections', 'subjects',
+            'section_names', 'created_at',
+        ]
 
     def create(self, validated_data):
-        section_names = validated_data.pop('section_names', ['A'])
+        section_names = validated_data.pop('section_names', None)
+        if section_names is None:
+            section_names = []
         school_class = SchoolClass.objects.create(**validated_data)
         for i, name in enumerate(section_names):
-            Section.objects.create(school_class=school_class, name=name.strip(), display_order=i)
+            cleaned = (name or '').strip()
+            if cleaned:
+                Section.objects.create(school_class=school_class, name=cleaned, display_order=i)
         return school_class
 
 
@@ -461,6 +573,68 @@ class BudgetSerializer(serializers.ModelSerializer):
             return 'warning'
         else:
             return 'on_track'
+
+
+def _normalize_indian_phone(raw_phone: str) -> str:
+    """Normalize to 10-digit Indian mobile. Use in field validators with a plain string error."""
+    digits = "".join(ch for ch in (raw_phone or "").strip() if ch.isdigit())
+    if digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    if len(digits) != 10:
+        raise serializers.ValidationError("Enter a valid 10-digit phone number.")
+    if digits[0] not in "6789":
+        raise serializers.ValidationError("Phone number must start with 6, 7, 8, or 9.")
+    return digits
+
+
+class AdmissionEnquirySerializer(serializers.ModelSerializer):
+    class_name = serializers.CharField(source="school_class.name", read_only=True, allow_null=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    source_display = serializers.CharField(source="get_source_display", read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AdmissionEnquiry
+        fields = [
+            "id",
+            "name",
+            "phone",
+            "parent_name",
+            "email",
+            "school_class",
+            "class_name",
+            "enquiry_date",
+            "follow_up_date",
+            "status",
+            "status_display",
+            "source",
+            "source_display",
+            "notes",
+            "created_by",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_by"]
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by:
+            return ""
+        return obj.created_by.get_full_name() or obj.created_by.username
+
+    def validate_phone(self, value):
+        return _normalize_indian_phone(value)
+
+    def validate(self, attrs):
+        school = getattr(self.instance, "school", None)
+        if not school:
+            request = self.context.get("request")
+            if request and getattr(request.user, "school", None):
+                school = request.user.school
+        school_class = attrs.get("school_class") or getattr(self.instance, "school_class", None)
+        if school_class and school and school_class.school_id != school.id:
+            raise serializers.ValidationError({"school_class": "Class does not belong to your school."})
+        return attrs
 
 
 class ExpenseReportSerializer(serializers.Serializer):

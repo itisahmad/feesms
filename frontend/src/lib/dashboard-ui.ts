@@ -3,6 +3,7 @@ export const dash = {
   label: 'block text-sm font-medium text-[var(--dash-text-muted)] mb-1.5',
   field:
     'w-full rounded-xl border border-[var(--dash-glass-border)] bg-[var(--dash-input-bg)] px-4 py-2.5 text-sm text-[var(--dash-text-body)] placeholder:text-[var(--dash-text-muted)] focus:border-teal-500/50 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50',
+  nativeSelect: 'dash-native-select w-full rounded-xl border border-[var(--dash-glass-border)] bg-[var(--dash-input-bg)] px-4 py-2.5 text-sm text-[var(--dash-text-body)] focus:border-teal-500/50 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50',
   fieldSm:
     'rounded-lg border border-[var(--dash-glass-border)] bg-[var(--dash-input-bg)] px-2.5 py-1.5 text-sm text-[var(--dash-text-body)] focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/20',
   sectionTitle: 'text-lg font-semibold text-[var(--dash-text-title)]',

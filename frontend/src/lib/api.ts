@@ -63,29 +63,50 @@ export const resetPassword = (data: { uid: string; token: string; password: stri
 
 // Staff users
 export const getStaffUsers = () => api.get('/staff-users/');
+export const getStaffModuleDefinitions = () => api.get('/staff-users/module-definitions/');
 export const createStaffUser = (data: {
   username: string;
   email?: string;
   first_name?: string;
   last_name?: string;
   phone?: string;
-  role: 'accountant' | 'staff';
   password: string;
   password2: string;
+  module_permissions?: Record<string, Record<string, boolean>>;
 }) => api.post('/staff-users/', data);
 export const updateStaffUser = (id: number, data: {
   email?: string;
   first_name?: string;
   last_name?: string;
   phone?: string;
-  role?: 'accountant' | 'staff';
   is_active?: boolean;
+  module_permissions?: Record<string, Record<string, boolean>>;
 }) => api.patch(`/staff-users/${id}/`, data);
 export const deleteStaffUser = (id: number) => api.delete(`/staff-users/${id}/`);
 
 // Schools
+export type SchoolRecord = {
+  id: number;
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  phone: string;
+  email: string;
+  logo: string | null;
+  logo_url?: string | null;
+  plan?: string;
+  max_students?: number;
+  max_staff_logins?: number;
+  academic_year_start_month: number;
+  fee_start_day?: number;
+  trial_ends_at?: string | null;
+  created_at?: string;
+};
+
 export const getSchool = () => api.get('/schools/');
-export const updateSchool = (id: number, data: object) => api.patch(`/schools/${id}/`, data);
+export const updateSchool = (id: number, data: FormData | Record<string, unknown>) =>
+  api.patch<SchoolRecord>(`/schools/${id}/`, data);
 export const upgradeSchoolPlan = (id: number, plan: 'basic' | 'standard' | 'premium') =>
   api.post(`/schools/${id}/upgrade_plan/`, { plan });
 
@@ -95,6 +116,10 @@ export const createClass = (data: { name: string; display_order?: number; sectio
   api.post('/classes/', data);
 export const addSection = (classId: number, name: string) =>
   api.post(`/classes/${classId}/add_section/`, { name });
+export const addSubject = (classId: number, name: string) =>
+  api.post(`/classes/${classId}/add_subject/`, { name });
+export const removeSubject = (classId: number, subjectId: number) =>
+  api.post(`/classes/${classId}/remove_subject/`, { subject_id: subjectId });
 export const applyFeeToClass = (classId: number, data: { fee_structure_id: number; effective_from?: string }) =>
   api.post(`/classes/${classId}/apply_fee/`, data);
 export const updateClass = (id: number, data: object) => api.patch(`/classes/${id}/`, data);
@@ -107,6 +132,18 @@ export const createStudent = (data: object) => api.post('/students/', data);
 export const updateStudent = (id: number, data: object) => api.patch(`/students/${id}/`, data);
 export const deleteStudent = (id: number) => api.delete(`/students/${id}/`);
 export const getStudentFeeHistory = (studentId: number) => api.get(`/students/${studentId}/fee_history/`);
+
+// Admission enquiries
+export const getEnquiries = (params?: {
+  status?: string;
+  class?: number;
+  search?: string;
+  follow_up_due?: 'today';
+}) => api.get('/enquiries/', { params });
+export const getEnquiryStats = () => api.get('/enquiries/stats/');
+export const createEnquiry = (data: object) => api.post('/enquiries/', data);
+export const updateEnquiry = (id: number, data: object) => api.patch(`/enquiries/${id}/`, data);
+export const deleteEnquiry = (id: number) => api.delete(`/enquiries/${id}/`);
 
 // Fee types
 export const getFeeTypes = () => api.get('/fee-types/');
@@ -250,3 +287,200 @@ export const verifyFeeCollectionPayment = (data: {
   razorpay_payment_id: string;
   razorpay_signature: string;
 }) => api.post('/payments/fee-collection/verify/', data);
+
+// Receipt template designer
+export type ReceiptTemplateMeta = {
+  key: string;
+  name: string;
+  description: string;
+  supports_a4: boolean;
+  supports_thermal: boolean;
+};
+
+export type ReceiptSettingsPayload = {
+  template_key: string;
+  print_format: 'a4' | 'thermal';
+  school_name: string;
+  address: string;
+  phone: string;
+  email: string;
+  header_color: string;
+  footer_text: string;
+  signature_label: string;
+  stamp_text: string;
+  show_logo: boolean;
+  updated_at?: string;
+};
+
+export const getReceiptTemplates = () => api.get<ReceiptTemplateMeta[]>('/receipts/templates/');
+export const getReceiptSettings = () => api.get<ReceiptSettingsPayload>('/receipts/settings/');
+export const updateReceiptSettings = (data: Partial<ReceiptSettingsPayload>) =>
+  api.patch<ReceiptSettingsPayload>('/receipts/settings/', data);
+export const previewReceiptPdf = (data?: Partial<ReceiptSettingsPayload>) =>
+  api.post('/receipts/preview/', data ?? {}, { responseType: 'blob' });
+
+export const generateReceiptPdf = (data: {
+  student_id?: number;
+  student_fee_id?: number;
+  receipt_type?: 'monthly' | 'yearly';
+  month?: number;
+  year?: number;
+  template_key?: string;
+  print_format?: 'a4' | 'thermal';
+}) => api.post('/receipts/generate/', data, { responseType: 'blob' });
+
+// Exam results
+export type ExamResultListItem = {
+  id: number;
+  name: string;
+  school_class: number;
+  class_name: string;
+  exam_date: string | null;
+  max_marks: string;
+  status: 'draft' | 'published';
+  marks_count: number;
+  students_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExamMarksheetSubject = {
+  id: number;
+  name: string;
+  display_order: number;
+};
+
+export type ExamMarksheetCell = {
+  mark_id: number | null;
+  class_subject_id: number;
+  marks_obtained: string | null;
+  max_marks: string;
+  is_absent: boolean;
+  grade: string;
+  remarks: string;
+};
+
+export type ExamMarksheetStudent = {
+  student_id: number;
+  student_name: string;
+  roll_number: string;
+  admission_number: string;
+  class_name: string;
+  marks: ExamMarksheetCell[];
+  total_obtained: string | null;
+  total_max: string | null;
+  percentage: number | null;
+  overall_grade: string;
+};
+
+export type ExamMarksheetResponse = {
+  exam: ExamResultListItem;
+  subjects: ExamMarksheetSubject[];
+  students: ExamMarksheetStudent[];
+  has_subjects: boolean;
+  has_students: boolean;
+};
+
+export type BulkMarkEntry = {
+  student_id: number;
+  class_subject_id: number;
+  marks_obtained?: number | string | null;
+  is_absent?: boolean;
+  remarks?: string;
+};
+
+export const getExams = (params?: { school_class?: number; status?: string }) =>
+  api.get<{ results?: ExamResultListItem[] } | ExamResultListItem[]>('/results/exams/', { params });
+
+export const createExam = (data: {
+  name: string;
+  school_class: number;
+  exam_date?: string | null;
+  max_marks?: number | string;
+}) => api.post<ExamResultListItem>('/results/exams/', data);
+
+export const deleteExam = (id: number) => api.delete(`/results/exams/${id}/`);
+
+export const getExamMarksheet = (id: number) =>
+  api.get<ExamMarksheetResponse>(`/results/exams/${id}/marksheet/`);
+
+export const initializeExamMarks = (id: number) =>
+  api.post<{ created: number; message: string }>(`/results/exams/${id}/initialize_marks/`);
+
+export const saveExamMarks = (id: number, marks: BulkMarkEntry[]) =>
+  api.post<{ updated: number }>(`/results/exams/${id}/save_marks/`, { marks });
+
+export const publishExam = (id: number) =>
+  api.post<ExamResultListItem>(`/results/exams/${id}/publish/`);
+
+export const unpublishExam = (id: number) =>
+  api.post<ExamResultListItem>(`/results/exams/${id}/unpublish/`);
+
+export type StudentPublishedResultSummary = {
+  exam_id: number;
+  exam_name: string;
+  exam_date: string | null;
+  class_name: string;
+  max_marks: string;
+  total_obtained: string | null;
+  total_max: string | null;
+  percentage: number | null;
+  overall_grade: string;
+};
+
+export type StudentPublishedResultsResponse = {
+  student_id: number;
+  student_name: string;
+  class_name: string;
+  results: StudentPublishedResultSummary[];
+};
+
+export type StudentExamReportResponse = {
+  exam: {
+    id: number;
+    name: string;
+    exam_date: string | null;
+    max_marks: string;
+    status: string;
+    class_name: string;
+  };
+  student: {
+    id: number;
+    name: string;
+    roll_number: string;
+    class_name: string;
+  };
+  subjects: ExamMarksheetSubject[];
+  marks: ExamMarksheetCell[];
+  total_obtained: string | null;
+  total_max: string | null;
+  percentage: number | null;
+  overall_grade: string;
+};
+
+export const getStudentPublishedResults = (studentId: number) =>
+  api.get<StudentPublishedResultsResponse>(`/results/students/${studentId}/published/`);
+
+export const getStudentExamReport = (examId: number, studentId: number) =>
+  api.get<StudentExamReportResponse>(`/results/exams/${examId}/student_report/`, {
+    params: { student_id: studentId },
+  });
+
+export type GradingBand = {
+  grade: string;
+  min_percentage: number;
+};
+
+export type GradingSettingsPayload = {
+  absent_grade: string;
+  bands: GradingBand[];
+  default_bands: GradingBand[];
+  updated_at?: string;
+};
+
+export const getGradingSettings = () =>
+  api.get<GradingSettingsPayload>('/results/grading-settings/');
+
+export const updateGradingSettings = (
+  data: Partial<Pick<GradingSettingsPayload, 'absent_grade' | 'bands'>> & { recalculate_draft?: boolean },
+) => api.patch<GradingSettingsPayload & { marks_recalculated?: number }>('/results/grading-settings/', data);

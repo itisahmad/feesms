@@ -7,6 +7,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .module_api import ModuleProtectedAPIView
 from schools.models import FeePayment, StudentFee
 from schools.serializers import FeePaymentSerializer
 
@@ -33,8 +34,9 @@ PLAN_MONTHLY_AMOUNT = {
 }
 
 
-class PaymentConfigView(APIView):
+class PaymentConfigView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
+    module_key = "payments"
 
     def get(self, request):
         school = request.user.school
@@ -54,8 +56,9 @@ class PaymentConfigView(APIView):
         return Response(serializer.data)
 
 
-class PlatformBillingSummaryView(APIView):
+class PlatformBillingSummaryView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
+    module_key = "payments"
 
     def get(self, request):
         school = request.user.school
@@ -73,8 +76,9 @@ class PlatformBillingSummaryView(APIView):
         )
 
 
-class PlatformCreateOrderView(APIView):
+class PlatformCreateOrderView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
+    module_key = "payments"
 
     def post(self, request):
         school = request.user.school
@@ -121,8 +125,9 @@ class PlatformCreateOrderView(APIView):
         )
 
 
-class PlatformVerifyPaymentView(APIView):
+class PlatformVerifyPaymentView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
+    module_key = "payments"
 
     def post(self, request):
         school = request.user.school
@@ -296,10 +301,11 @@ class ParentVerifyPaymentView(APIView):
         )
 
 
-class FeeCollectionCreateOrderView(APIView):
+class FeeCollectionCreateOrderView(ModuleProtectedAPIView):
     """Create a Razorpay order for Dashboard fee collection (monthly / all pending / full year)."""
 
     permission_classes = [permissions.IsAuthenticated]
+    module_key = "fee_collection"
 
     def post(self, request):
         from schools.bulk_fee_collection import (
@@ -420,10 +426,11 @@ class FeeCollectionCreateOrderView(APIView):
         )
 
 
-class FeeCollectionVerifyView(APIView):
+class FeeCollectionVerifyView(ModuleProtectedAPIView):
     """Verify Razorpay signature and record school fee payments for a checkout session."""
 
     permission_classes = [permissions.IsAuthenticated]
+    module_key = "fee_collection"
 
     def post(self, request):
         from schools.bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation

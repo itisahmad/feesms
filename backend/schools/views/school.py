@@ -14,12 +14,13 @@ from datetime import datetime
 from decimal import Decimal
 from django.utils.encoding import force_bytes, force_str
 
-from ..models import (User, School, SchoolClass, Section, Student, FeeType, FeeStructure, 
+from ..models import (User, School, SchoolClass, Section, ClassSubject, Student, FeeType, FeeStructure,
                      StudentFeeStructureChoice, StudentFee, FeePayment,
                      ExpenseCategory, Vendor, Expense, Budget)
 from ..messaging import send_sms_message, send_whatsapp_message
 from ..serializers import (
     UserSerializer, RegisterSerializer, SchoolSerializer, SchoolClassSerializer, SectionSerializer,
+    ClassSubjectSerializer,
     StaffUserCreateSerializer, StaffUserUpdateSerializer, ForgotPasswordSerializer, ResetPasswordSerializer,
     StudentSerializer, FeeTypeSerializer, FeeStructureSerializer,
     StudentFeeSerializer, StudentFeeCreateSerializer, FeePaymentSerializer,
@@ -29,7 +30,7 @@ from ..default_fee_types import ensure_default_fee_types_for_school
 from ..fee_periods import is_struct_billable_for_period
 from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
-from ..permissions import IsSchoolOwner
+from ..permissions import HasModulePermission, IsSchoolOwner
 from ..services.fee_collection import (
     build_collection_summary,
     build_dashboard_stats,
@@ -39,7 +40,8 @@ from ..services.fee_collection import (
 
 class SchoolViewSet(viewsets.ModelViewSet):
     serializer_class = SchoolSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    module_key = "settings"
 
     def get_queryset(self):
         if self.request.user.school:
@@ -68,13 +70,18 @@ class SchoolViewSet(viewsets.ModelViewSet):
 
 class SchoolClassViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
     serializer_class = SchoolClassSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    module_key = "classes"
 
     def get_queryset(self):
         school = self.get_user_school()
         if not school:
             return SchoolClass.objects.none()
-        return SchoolClass.objects.filter(school=school).prefetch_related('sections').order_by('display_order', 'name')
+        return (
+            SchoolClass.objects.filter(school=school)
+            .prefetch_related('sections', 'subjects')
+            .order_by('display_order', 'name')
+        )
 
     @action(detail=True, methods=['post'])
     def add_section(self, request, pk=None):
@@ -87,6 +94,29 @@ class SchoolClassViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         order = school_class.sections.count()
         section = Section.objects.create(school_class=school_class, name=name, display_order=order)
         return Response(SectionSerializer(section).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def add_subject(self, request, pk=None):
+        school_class = self.get_object()
+        name = request.data.get('name', '').strip()
+        if not name:
+            return Response({'error': 'Subject name required'}, status=status.HTTP_400_BAD_REQUEST)
+        if ClassSubject.objects.filter(school_class=school_class, name=name).exists():
+            return Response({'error': f'Subject "{name}" already exists in this class'}, status=status.HTTP_400_BAD_REQUEST)
+        order = school_class.subjects.count()
+        subject = ClassSubject.objects.create(school_class=school_class, name=name, display_order=order)
+        return Response(ClassSubjectSerializer(subject).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def remove_subject(self, request, pk=None):
+        school_class = self.get_object()
+        subject_id = request.data.get('subject_id')
+        if not subject_id:
+            return Response({'error': 'subject_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        deleted, _ = ClassSubject.objects.filter(school_class=school_class, pk=subject_id).delete()
+        if not deleted:
+            return Response({'error': 'Subject not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'])
     def apply_fee(self, request, pk=None):

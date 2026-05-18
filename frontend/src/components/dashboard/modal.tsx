@@ -10,15 +10,17 @@ interface ModalProps {
   onClose: () => void
   children: ReactNode
   wide?: boolean
+  xl?: boolean
 }
 
-export function DashboardModal({ title, subtitle, onClose, children, wide }: ModalProps) {
+export function DashboardModal({ title, subtitle, onClose, children, wide, xl }: ModalProps) {
+  const widthClass = xl ? 'max-w-5xl' : wide ? 'max-w-2xl' : 'max-w-md'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className={`glass-panel-strong max-h-[90vh] w-full overflow-y-auto ${wide ? 'max-w-2xl' : 'max-w-md'}`}
+        className={`glass-panel-strong max-h-[90vh] w-full overflow-y-auto ${widthClass}`}
       >
         <div
           className="sticky top-0 z-10 flex items-start justify-between border-b px-6 py-4 backdrop-blur-xl"

@@ -29,7 +29,7 @@ from ..default_fee_types import ensure_default_fee_types_for_school
 from ..fee_periods import is_struct_billable_for_period
 from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
-from ..permissions import IsSchoolOwner
+from ..permissions import HasModulePermission, IsSchoolOwner
 from ..services.fee_collection import (
     build_collection_summary,
     build_dashboard_stats,
@@ -39,7 +39,8 @@ from ..services.fee_collection import (
 
 class StudentViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
     serializer_class = StudentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    module_key = "students"
 
     def get_queryset(self):
         school = self.get_user_school()
@@ -69,7 +70,8 @@ class StudentViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
 
 class FeeTypeViewSet(viewsets.ModelViewSet):
     serializer_class = FeeTypeSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    module_key = "fee_structure"
 
     def get_queryset(self):
         school = self.request.user.school
@@ -111,7 +113,8 @@ class FeeTypeViewSet(viewsets.ModelViewSet):
 
 class FeeStructureViewSet(viewsets.ModelViewSet):
     serializer_class = FeeStructureSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    module_key = "fee_structure"
 
     def get_queryset(self):
         school = self.request.user.school

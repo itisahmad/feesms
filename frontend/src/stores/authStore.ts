@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { getMe, login as apiLogin } from '@/lib/api';
+import type { ModulePermissions } from '@/lib/staff-modules';
 
 export interface AuthUser {
   id: number;
@@ -14,12 +15,16 @@ export interface AuthUser {
   school: number | null;
   school_name: string;
   school_plan?: 'basic' | 'standard' | 'premium';
+  is_owner?: boolean;
+  module_permissions?: ModulePermissions;
+  allowed_modules?: string[];
 }
 
 export interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   setUser: (user: AuthUser | null) => void;
+  refreshUser: () => Promise<AuthUser | null>;
   initializeAuth: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
@@ -36,6 +41,23 @@ export const useAuthStore = create<AuthState>((set: (partial: Partial<AuthState>
   loading: true,
 
   setUser: (user: AuthUser | null) => set({ user }),
+
+  refreshUser: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access') : null;
+    if (!token) {
+      set({ user: null });
+      return null;
+    }
+    try {
+      const { data } = await getMe();
+      set({ user: data });
+      return data;
+    } catch {
+      clearAuthTokens();
+      set({ user: null });
+      return null;
+    }
+  },
 
   initializeAuth: async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access') : null;

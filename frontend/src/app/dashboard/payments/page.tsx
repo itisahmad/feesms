@@ -12,6 +12,7 @@ import {
   verifyParentPayment,
   verifyPlatformPayment,
 } from '@/lib/api';
+import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { PageLoading } from '@/components/dashboard/loading-state';
@@ -182,10 +183,14 @@ export default function PaymentsPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className={dash.label}>Billing cycle</label>
-              <select value={platformCycle} onChange={(e) => setPlatformCycle(e.target.value as 'monthly' | 'yearly')} className={dash.field}>
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-              </select>
+              <DashboardSelect
+                value={platformCycle}
+                onChange={(v) => setPlatformCycle(v as 'monthly' | 'yearly')}
+                options={[
+                  { value: 'monthly', label: 'Monthly' },
+                  { value: 'yearly', label: 'Yearly' },
+                ]}
+              />
             </div>
             <div>
               <label className={dash.label}>School Razorpay Route Account ID</label>
