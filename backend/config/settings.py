@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'payments',
     'receipts',
     'results',
+    'announcements',
 ]
 
 AUTH_USER_MODEL = 'schools.User'

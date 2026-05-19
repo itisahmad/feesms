@@ -19,6 +19,7 @@ MODULE_DEFINITIONS = [
     {"key": "payments", "label": "Payments", "path": "/dashboard/payments"},
     {"key": "receipt_templates", "label": "Receipt Templates", "path": "/dashboard/receipt-templates"},
     {"key": "results", "label": "Results", "path": "/dashboard/results"},
+    {"key": "announcements", "label": "Announcements", "path": "/dashboard/announcements"},
     {"key": "settings", "label": "Settings", "path": "/dashboard/settings"},
 ]
 

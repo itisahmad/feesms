@@ -26,6 +26,7 @@ export const STAFF_MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'payments', label: 'Payments', path: '/dashboard/payments' },
   { key: 'receipt_templates', label: 'Receipt Templates', path: '/dashboard/receipt-templates' },
   { key: 'results', label: 'Results', path: '/dashboard/results' },
+  { key: 'announcements', label: 'Announcements', path: '/dashboard/announcements' },
   { key: 'settings', label: 'Settings', path: '/dashboard/settings' },
 ];
 
@@ -90,6 +91,7 @@ export function pathnameToModuleKey(pathname: string): string | null {
   if (pathname.startsWith('/dashboard/payments')) return 'payments';
   if (pathname.startsWith('/dashboard/receipt-templates')) return 'receipt_templates';
   if (pathname.startsWith('/dashboard/results')) return 'results';
+  if (pathname.startsWith('/dashboard/announcements')) return 'announcements';
   if (pathname.startsWith('/dashboard/settings')) return 'settings';
   if (pathname.startsWith('/dashboard/staff')) return 'staff';
   return null;

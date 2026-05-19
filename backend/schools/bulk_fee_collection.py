@@ -113,7 +113,7 @@ def fee_structure_is_paid_for_monthly_display(student, fee_structure, month: int
     sf_curr = fees.filter(month=month, year=year).first()
     if not sf_curr:
         return False
-    paid_amt = sum(float(p.amount) for p in sf.payments.all())
+    paid_amt = sum(float(p.amount) for p in sf_curr.payments.all())
     return paid_amt > 0 and _student_fee_balance(sf_curr) <= 0.01
 
 

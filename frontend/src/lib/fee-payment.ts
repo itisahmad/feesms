@@ -1,5 +1,6 @@
 export type FeeBreakdownItem = {
   fee_type: string;
+  fee_structure_id?: number;
   month?: number;
   year?: number;
   balance: number;
@@ -16,6 +17,14 @@ export type PaymentPreview = {
   };
   payable_fee_structure_ids?: number[];
   paid_fee_structure_ids?: number[];
+};
+
+export type PayMode = 'monthly' | 'yearly';
+
+export type FeeStructureOption = {
+  id: number;
+  fee_type_name: string;
+  billing_period_display?: string;
 };
 
 export function isFeeStructurePaid(feeStructureId: number, paidIds?: number[]): boolean {
@@ -59,18 +68,73 @@ export function computeTotalWithAdjustment(
   return base + amt;
 }
 
-/** Same IDs in same order — avoids pointless state updates that retrigger preview fetches. */
 export function sameFeeStructureIdList(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
+export function filterBreakdownBySelection(
+  breakdown: FeeBreakdownItem[],
+  selectedIds: number[]
+): FeeBreakdownItem[] {
+  if (!selectedIds.length) return [];
+  const set = new Set(selectedIds);
+  return breakdown.filter((b) => b.fee_structure_id != null && set.has(b.fee_structure_id));
+}
+
+export function computeSelectedMonthlyTotal(
+  preview: PaymentPreview | null,
+  selectedIds: number[]
+): number {
+  if (!preview) return 0;
+  return filterBreakdownBySelection(preview.monthly.breakdown, selectedIds).reduce(
+    (sum, f) => sum + f.balance,
+    0
+  );
+}
+
+export function computeSelectedYearlyTotals(
+  preview: PaymentPreview | null,
+  selectedIds: number[]
+): { amount: number; amountBeforeDiscount: number } {
+  if (!preview) return { amount: 0, amountBeforeDiscount: 0 };
+  const items = filterBreakdownBySelection(preview.yearly.breakdown, selectedIds);
+  return {
+    amount: items.reduce((sum, f) => sum + (f.after_discount ?? f.balance), 0),
+    amountBeforeDiscount: items.reduce((sum, f) => sum + f.balance, 0),
+  };
+}
+
 export function getPreviewBaseTotal(
   preview: PaymentPreview | null,
-  payMode: 'monthly' | 'yearly' | 'all_pending',
-  totalPending: number
+  payMode: PayMode,
+  selectedIds: number[]
 ): number {
-  if (payMode === 'all_pending') return totalPending;
   if (!preview) return 0;
-  if (payMode === 'yearly') return preview.yearly.amount;
-  return preview.monthly.amount;
+  if (payMode === 'yearly') return computeSelectedYearlyTotals(preview, selectedIds).amount;
+  return computeSelectedMonthlyTotal(preview, selectedIds);
+}
+
+/** Keep paid IDs stable across preview refetches (paid list is class-wide, not selection-scoped). */
+export function mergeFeeStructureIds(existing: number[], incoming: number[]): number[] {
+  if (!incoming.length) return existing;
+  return Array.from(new Set([...existing, ...incoming]));
+}
+
+/** Default checkboxes: assigned + payable, excluding already-paid types. */
+export function buildDefaultSelectedFeeIds(
+  assignedIds: number[],
+  classFeeIds: number[],
+  payableIds: number[],
+  paidIds: number[]
+): number[] {
+  const validAssigned = assignedIds.filter((id) => classFeeIds.includes(id));
+  const paidSet = new Set(paidIds);
+  if (payableIds.length) {
+    return validAssigned.filter((id) => payableIds.includes(id) && !paidSet.has(id));
+  }
+  return validAssigned.filter((id) => !paidSet.has(id));
+}
+
+export function selectedIdsKey(ids: number[]): string {
+  return [...ids].sort((a, b) => a - b).join(',');
 }

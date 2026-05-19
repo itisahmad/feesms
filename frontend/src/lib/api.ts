@@ -204,13 +204,21 @@ export const payAllYear = (data: {
   notes?: string;
   fee_structure_ids?: number[];
 } & FeePaymentAdjustment) => api.post('/student-fees/pay_all_year/', data);
-export const getPaymentPreview = (studentId: number, month: number, year: number, feeStructureIds?: number[]) =>
+export const getPaymentPreview = (
+  studentId: number,
+  month: number,
+  year: number,
+  feeStructureIds?: number[],
+  options?: { metaOnly?: boolean; breakupMode?: 'monthly' | 'yearly' }
+) =>
   api.get('/student-fees/payment_preview/', {
     params: {
       student_id: studentId,
       month,
       year,
-      ...(feeStructureIds && { fee_structure_ids: feeStructureIds.join(',') }),
+      ...(feeStructureIds?.length ? { fee_structure_ids: feeStructureIds.join(',') } : {}),
+      ...(options?.metaOnly ? { meta_only: '1' } : {}),
+      ...(options?.breakupMode ? { breakup_mode: options.breakupMode } : {}),
     },
   });
 export const getReceipt = (studentFeeId: number) =>
@@ -484,3 +492,82 @@ export const getGradingSettings = () =>
 export const updateGradingSettings = (
   data: Partial<Pick<GradingSettingsPayload, 'absent_grade' | 'bands'>> & { recalculate_draft?: boolean },
 ) => api.patch<GradingSettingsPayload & { marks_recalculated?: number }>('/results/grading-settings/', data);
+
+export type AnnouncementCategory =
+  | 'trip'
+  | 'event'
+  | 'holiday'
+  | 'academic'
+  | 'general'
+  | 'urgent';
+
+export type AnnouncementAudience = 'all_parents' | 'classes';
+
+export type AnnouncementChannel = 'sms' | 'whatsapp' | 'both';
+
+export type AnnouncementListItem = {
+  id: number;
+  title: string;
+  category: AnnouncementCategory;
+  category_display: string;
+  audience_type: AnnouncementAudience;
+  audience_label: string;
+  target_class_ids: number[];
+  channel: AnnouncementChannel;
+  channel_display: string;
+  status: 'draft' | 'sent';
+  status_display: string;
+  recipient_count: number;
+  sent_sms: number;
+  sent_whatsapp: number;
+  failed_count: number;
+  sent_at: string | null;
+  created_by_name: string;
+  created_at: string;
+};
+
+export type AnnouncementDetail = AnnouncementListItem & {
+  body: string;
+  target_class_names: string[];
+  updated_at: string;
+  deliveries?: {
+    id: number;
+    parent_phone: string;
+    student_name: string;
+    class_name: string;
+    channel: string;
+    status: string;
+    error_message: string;
+    created_at: string;
+  }[];
+};
+
+export type AnnouncementWritePayload = {
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  audience_type: AnnouncementAudience;
+  target_class_ids?: number[];
+  channel: AnnouncementChannel;
+};
+
+export const getAnnouncements = (params?: { category?: string; status?: string }) =>
+  api.get<{ results?: AnnouncementListItem[] } | AnnouncementListItem[]>('/announcements/', { params });
+
+export const getAnnouncement = (id: number) => api.get<AnnouncementDetail>(`/announcements/${id}/`);
+
+export const createAnnouncement = (data: AnnouncementWritePayload) =>
+  api.post<AnnouncementDetail>('/announcements/', data);
+
+export const updateAnnouncement = (id: number, data: Partial<AnnouncementWritePayload>) =>
+  api.patch<AnnouncementDetail>(`/announcements/${id}/`, data);
+
+export const deleteAnnouncement = (id: number) => api.delete(`/announcements/${id}/`);
+
+export const previewAnnouncementRecipients = (data: {
+  audience_type: AnnouncementAudience;
+  target_class_ids?: number[];
+}) => api.post<{ recipient_count: number }>('/announcements/preview_recipients/', data);
+
+export const sendAnnouncement = (id: number) =>
+  api.post<{ message: string; announcement: AnnouncementDetail }>(`/announcements/${id}/send/`);

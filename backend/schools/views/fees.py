@@ -116,6 +116,10 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
         year = request.query_params.get('year')
         if not student_id or not month or not year:
             return Response({'error': 'student_id, month, year required'}, status=400)
+        meta_only = str(request.query_params.get('meta_only', '')).lower() in ('1', 'true', 'yes')
+        breakup_mode = str(request.query_params.get('breakup_mode', 'both')).lower()
+        if breakup_mode not in ('monthly', 'yearly', 'both'):
+            breakup_mode = 'both'
         raw_selected_ids = request.query_params.get('fee_structure_ids')
         selected_fee_structure_ids = None
         if raw_selected_ids:
@@ -128,29 +132,29 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
         if not student:
             return Response({'error': 'Student not found'}, status=404)
 
-        # Monthly: only fees for (month, year)
-        monthly_fees = StudentFee.objects.filter(
-            student_id=student_id,
-            student__school=school,
-            month=month,
-            year=year,
-        ).select_related('fee_structure__fee_type').prefetch_related('payments')
-        if selected_fee_structure_ids is not None:
-            monthly_fees = monthly_fees.filter(fee_structure_id__in=selected_fee_structure_ids)
         monthly_breakdown = []
         monthly_total = 0
-        for sf in monthly_fees:
-            paid = sum(float(p.amount) for p in sf.payments.all())
-            balance = float(sf.total_amount) - paid
-            if balance > 0:
-                monthly_breakdown.append({
-                    'fee_type': sf.fee_structure.fee_type.name,
-                    'fee_structure_id': sf.fee_structure_id,
-                    'month': sf.month,
-                    'year': sf.year,
-                    'balance': round(balance, 2),
-                })
-                monthly_total += balance
+        if breakup_mode in ('monthly', 'both'):
+            monthly_fees = StudentFee.objects.filter(
+                student_id=student_id,
+                student__school=school,
+                month=month,
+                year=year,
+            ).select_related('fee_structure__fee_type').prefetch_related('payments')
+            if selected_fee_structure_ids is not None:
+                monthly_fees = monthly_fees.filter(fee_structure_id__in=selected_fee_structure_ids)
+            for sf in monthly_fees:
+                paid = sum(float(p.amount) for p in sf.payments.all())
+                balance = float(sf.total_amount) - paid
+                if balance > 0:
+                    monthly_breakdown.append({
+                        'fee_type': sf.fee_structure.fee_type.name,
+                        'fee_structure_id': sf.fee_structure_id,
+                        'month': sf.month,
+                        'year': sf.year,
+                        'balance': round(balance, 2),
+                    })
+                    monthly_total += balance
 
         # Yearly: full academic year (same logic as pay_all_year but read-only)
         start_month = getattr(school, 'academic_year_start_month', 4) or 4
@@ -184,17 +188,6 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
         else:
             structs_to_use = [s for s in structures if not s.fee_type.name.lower().startswith('transport') or getattr(student, 'uses_transport', True)]
 
-        if selected_fee_structure_ids is not None:
-            selected_qs = FeeStructure.objects.filter(
-                school=school,
-                id__in=selected_fee_structure_ids,
-            ).select_related('fee_type')
-            if student.school_class:
-                selected_qs = selected_qs.filter(Q(school_class=student.school_class) | Q(school_class__isnull=True))
-            else:
-                selected_qs = selected_qs.filter(school_class__isnull=True)
-            structs_to_use = list(selected_qs)
-
         # Fallback: if no structures for this academic year, use structures from student's existing fees or class
         if not structs_to_use:
             existing_fee_struct_ids = StudentFee.objects.filter(
@@ -223,6 +216,50 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
                 fallback_structs = [s for s in fallback_structs if not s.fee_type.name.lower().startswith('transport') or getattr(student, 'uses_transport', True)]
             structs_to_use = fallback_structs
 
+        structures_for_meta = list(structs_to_use)
+
+        if selected_fee_structure_ids is not None:
+            selected_qs = FeeStructure.objects.filter(
+                school=school,
+                id__in=selected_fee_structure_ids,
+            ).select_related('fee_type')
+            if student.school_class:
+                selected_qs = selected_qs.filter(Q(school_class=student.school_class) | Q(school_class__isnull=True))
+            else:
+                selected_qs = selected_qs.filter(school_class__isnull=True)
+            structs_to_use = list(selected_qs)
+
+        payable_fee_structure_ids = get_payable_fee_structure_ids_for_monthly(
+            student, school, month, year, structures_for_meta
+        )
+        paid_fee_structure_ids = get_paid_fee_structure_ids_for_monthly(
+            student, school, month, year, structures_for_meta
+        )
+
+        if meta_only:
+            return Response({
+                'monthly': {'amount': 0, 'breakdown': []},
+                'yearly': {
+                    'amount': 0,
+                    'amount_before_discount': 0,
+                    'breakdown': [],
+                },
+                'payable_fee_structure_ids': payable_fee_structure_ids,
+                'paid_fee_structure_ids': paid_fee_structure_ids,
+            })
+
+        if breakup_mode == 'monthly':
+            return Response({
+                'monthly': {'amount': round(monthly_total, 2), 'breakdown': monthly_breakdown},
+                'yearly': {
+                    'amount': 0,
+                    'amount_before_discount': 0,
+                    'breakdown': [],
+                },
+                'payable_fee_structure_ids': payable_fee_structure_ids,
+                'paid_fee_structure_ids': paid_fee_structure_ids,
+            })
+
         yearly_breakdown = []
         yearly_total = 0
         yearly_total_before_discount = 0
@@ -245,18 +282,14 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
                             continue
                     except (ValueError, TypeError):
                         pass
-                sf, _ = StudentFee.objects.get_or_create(
+                sf = StudentFee.objects.filter(
                     student_id=student_id,
                     fee_structure_id=struct.id,
                     month=m,
                     year=y,
-                    defaults={
-                        'amount': struct.amount,
-                        'late_fine': 0,
-                        'total_amount': struct.amount,
-                        'due_date': date(y, m, min(struct.due_day, 28)),
-                    }
-                )
+                ).prefetch_related('payments').first()
+                if not sf:
+                    continue
                 paid = sum(float(p.amount) for p in sf.payments.all())
                 balance = float(sf.total_amount) - paid
                 if balance > 0:
@@ -274,13 +307,6 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
                     })
                     yearly_total += after_discount
                     yearly_total_before_discount += balance
-
-        payable_fee_structure_ids = get_payable_fee_structure_ids_for_monthly(
-            student, school, month, year, structs_to_use
-        )
-        paid_fee_structure_ids = get_paid_fee_structure_ids_for_monthly(
-            student, school, month, year, structs_to_use
-        )
 
         return Response({
             'monthly': {'amount': round(monthly_total, 2), 'breakdown': monthly_breakdown},
