@@ -252,8 +252,30 @@ class SchoolClassSerializer(serializers.ModelSerializer):
         model = SchoolClass
         fields = [
             'id', 'name', 'display_order', 'sections', 'subjects',
-            'section_names', 'created_at',
+            'section_names', 'whatsapp_group_name', 'whatsapp_group_link', 'whatsapp_group_id',
+            'created_at',
         ]
+
+    def validate_whatsapp_group_link(self, value):
+        value = (value or '').strip()
+        if not value:
+            return ''
+        if not value.startswith(('http://', 'https://')):
+            raise serializers.ValidationError('Enter a valid URL (https://chat.whatsapp.com/...).')
+        return value
+
+    def validate(self, attrs):
+        link = (attrs.get('whatsapp_group_link') or '').strip()
+        if self.instance:
+            link = link or (self.instance.whatsapp_group_link or '').strip()
+        group_id = (attrs.get('whatsapp_group_id') or '').strip()
+        if self.instance and not group_id:
+            group_id = (self.instance.whatsapp_group_id or '').strip()
+        if group_id and not link:
+            raise serializers.ValidationError({
+                'whatsapp_group_link': 'Add the group invite link so parents can join the class group.',
+            })
+        return attrs
 
     def create(self, validated_data):
         section_names = validated_data.pop('section_names', None)
@@ -270,12 +292,28 @@ class SchoolClassSerializer(serializers.ModelSerializer):
 class StudentSerializer(serializers.ModelSerializer):
     class_name = serializers.CharField(source='get_class_display', read_only=True)
     section_name = serializers.CharField(source='section.name', read_only=True, allow_null=True)
+    class_whatsapp_group_name = serializers.SerializerMethodField()
+    class_whatsapp_group_link = serializers.SerializerMethodField()
     fee_structure_choices = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
 
     class Meta:
         model = Student
-        fields = ['id', 'name', 'school_class', 'section', 'class_name', 'section_name', 'admission_date', 'charges_effective_from', 'uses_transport', 'parent_name', 'parent_phone', 'parent_email',
-                  'admission_number', 'roll_number', 'is_active', 'fee_structure_choices', 'created_at']
+        fields = [
+            'id', 'name', 'school_class', 'section', 'class_name', 'section_name',
+            'class_whatsapp_group_name', 'class_whatsapp_group_link',
+            'admission_date', 'charges_effective_from', 'uses_transport', 'parent_name', 'parent_phone', 'parent_email',
+            'admission_number', 'roll_number', 'is_active', 'fee_structure_choices', 'created_at',
+        ]
+
+    def get_class_whatsapp_group_name(self, obj):
+        if obj.school_class_id and obj.school_class:
+            return obj.school_class.whatsapp_group_name or ''
+        return ''
+
+    def get_class_whatsapp_group_link(self, obj):
+        if obj.school_class_id and obj.school_class:
+            return obj.school_class.whatsapp_group_link or ''
+        return ''
         read_only_fields = ['admission_number']
 
     def _get_school(self, attrs):

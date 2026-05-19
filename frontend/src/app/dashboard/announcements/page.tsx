@@ -64,6 +64,7 @@ const emptyForm = () => ({
   audience_type: 'all_parents' as AnnouncementAudience,
   target_class_ids: [] as number[],
   channel: 'both' as AnnouncementChannel,
+  post_to_whatsapp_groups: true,
 });
 
 function parseList<T>(data: { results?: T[] } | T[]): T[] {
@@ -82,6 +83,7 @@ export default function AnnouncementsPage() {
   const [detail, setDetail] = useState<AnnouncementDetail | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
+  const [whatsappGroupCount, setWhatsappGroupCount] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -106,12 +108,19 @@ export default function AnnouncementsPage() {
     (audience_type: AnnouncementAudience, target_class_ids: number[]) => {
       if (audience_type === 'classes' && !target_class_ids.length) {
         setRecipientCount(0);
+        setWhatsappGroupCount(0);
         return;
       }
       setPreviewLoading(true);
       previewAnnouncementRecipients({ audience_type, target_class_ids })
-        .then(({ data }) => setRecipientCount(data.recipient_count))
-        .catch(() => setRecipientCount(null))
+        .then(({ data }) => {
+          setRecipientCount(data.recipient_count);
+          setWhatsappGroupCount(data.whatsapp_group_count ?? 0);
+        })
+        .catch(() => {
+          setRecipientCount(null);
+          setWhatsappGroupCount(null);
+        })
         .finally(() => setPreviewLoading(false));
     },
     []
@@ -138,6 +147,7 @@ export default function AnnouncementsPage() {
             audience_type: data.audience_type,
             target_class_ids: data.target_class_ids || [],
             channel: data.channel,
+            post_to_whatsapp_groups: data.post_to_whatsapp_groups ?? true,
           });
           setComposeOpen(true);
         })
@@ -147,6 +157,7 @@ export default function AnnouncementsPage() {
     setEditingId(null);
     setForm(emptyForm());
     setRecipientCount(null);
+    setWhatsappGroupCount(null);
     setComposeOpen(true);
   };
 
@@ -175,6 +186,7 @@ export default function AnnouncementsPage() {
     audience_type: form.audience_type,
     target_class_ids: form.audience_type === 'classes' ? form.target_class_ids : [],
     channel: form.channel,
+    post_to_whatsapp_groups: form.post_to_whatsapp_groups,
   });
 
   const handleSaveDraft = async () => {
@@ -459,12 +471,33 @@ export default function AnnouncementsPage() {
                 {previewLoading ? (
                   <span className="text-slate-500">Counting parents…</span>
                 ) : recipientCount != null ? (
-                  <span>Will reach <strong>{recipientCount}</strong> parent phone(s)</span>
+                  <span>
+                    Will reach <strong>{recipientCount}</strong> parent phone(s)
+                    {form.post_to_whatsapp_groups && whatsappGroupCount != null && whatsappGroupCount > 0 && (
+                      <>
+                        {' '}
+                        · <strong>{whatsappGroupCount}</strong> class WhatsApp group(s)
+                      </>
+                    )}
+                  </span>
                 ) : (
                   <span className="text-slate-500">Select audience to preview reach</span>
                 )}
               </div>
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={form.post_to_whatsapp_groups}
+                onChange={(e) => setForm((f) => ({ ...f, post_to_whatsapp_groups: e.target.checked }))}
+                className="mt-0.5 rounded accent-teal-500"
+              />
+              <span>
+                Also notify class WhatsApp groups (post to group if configured, otherwise include join link in parent
+                messages)
+              </span>
+            </label>
 
             <div>
               <label className={dash.label}>Channel</label>
@@ -541,9 +574,33 @@ export default function AnnouncementsPage() {
                         <span className="text-slate-500">Failed deliveries:</span> {detail.failed_count}
                       </p>
                     )}
+                    {detail.whatsapp_groups_targeted > 0 && (
+                      <>
+                        <p>
+                          <span className="text-slate-500">Class WhatsApp groups:</span>{' '}
+                          {detail.whatsapp_groups_posted} posted, {detail.whatsapp_groups_link_only} via parent link
+                          {detail.whatsapp_groups_failed > 0 && (
+                            <span className="text-rose-400">, {detail.whatsapp_groups_failed} failed</span>
+                          )}
+                        </p>
+                      </>
+                    )}
                   </>
                 )}
               </div>
+              {detail.group_deliveries && detail.group_deliveries.length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Group delivery</p>
+                  <ul className="space-y-1 text-slate-400">
+                    {detail.group_deliveries.map((g) => (
+                      <li key={g.id}>
+                        {g.class_name}: {g.status_display}
+                        {g.error_message ? ` — ${g.error_message}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {detail.target_class_names?.length > 0 && (
                 <p className="text-slate-400">
                   Classes: {detail.target_class_names.join(', ')}

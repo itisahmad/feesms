@@ -94,6 +94,21 @@ class SchoolClass(models.Model):
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='classes')
     name = models.CharField(max_length=50)  # e.g., "Nursery", "LKG", "Class 1", "Class 2"
     display_order = models.IntegerField(default=0)  # For ordering in dropdown
+    whatsapp_group_name = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text='Optional label, e.g. "Class 5 Parents"',
+    )
+    whatsapp_group_link = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text='Optional invite link (https://chat.whatsapp.com/...) for parents to join.',
+    )
+    whatsapp_group_id = models.CharField(
+        max_length=80,
+        blank=True,
+        help_text='Optional WhatsApp group JID for Cloud API auto-post (e.g. 120363...@g.us).',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

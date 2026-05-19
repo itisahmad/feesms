@@ -13,6 +13,7 @@ import {
   IdCard,
   IndianRupee,
   Layers,
+  MessageCircle,
   Receipt,
   UserCircle,
 } from 'lucide-react';
@@ -66,6 +67,8 @@ export default function StudentDetailPage() {
       admission_number?: string;
       roll_number?: string;
       parent_phone: string;
+      class_whatsapp_group_name?: string;
+      class_whatsapp_group_link?: string;
     };
     admission_date: string | null;
     months_with_fees: number;
@@ -259,6 +262,34 @@ export default function StudentDetailPage() {
           ))}
         </div>
       </GlassCard>
+
+      {student.class_whatsapp_group_link ? (
+        <GlassCard delay={0.08}>
+          <div className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-300">
+                <MessageCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">
+                  {student.class_whatsapp_group_name || `${student.class_name} parents group`}
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Parents can join the class WhatsApp group for announcements and updates.
+                </p>
+              </div>
+            </div>
+            <a
+              href={student.class_whatsapp_group_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(dash.link, 'shrink-0')}
+            >
+              Join WhatsApp group
+            </a>
+          </div>
+        </GlassCard>
+      ) : null}
 
       <GlassCard delay={0.1}>
         <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">

@@ -112,8 +112,14 @@ export const upgradeSchoolPlan = (id: number, plan: 'basic' | 'standard' | 'prem
 
 // Classes
 export const getClasses = () => api.get('/classes/');
-export const createClass = (data: { name: string; display_order?: number; section_names?: string[] }) =>
-  api.post('/classes/', data);
+export const createClass = (data: {
+  name: string;
+  display_order?: number;
+  section_names?: string[];
+  whatsapp_group_name?: string;
+  whatsapp_group_link?: string;
+  whatsapp_group_id?: string;
+}) => api.post('/classes/', data);
 export const addSection = (classId: number, name: string) =>
   api.post(`/classes/${classId}/add_section/`, { name });
 export const addSubject = (classId: number, name: string) =>
@@ -515,14 +521,29 @@ export type AnnouncementListItem = {
   target_class_ids: number[];
   channel: AnnouncementChannel;
   channel_display: string;
+  post_to_whatsapp_groups: boolean;
   status: 'draft' | 'sent';
   status_display: string;
   recipient_count: number;
   sent_sms: number;
   sent_whatsapp: number;
   failed_count: number;
+  whatsapp_groups_targeted: number;
+  whatsapp_groups_posted: number;
+  whatsapp_groups_failed: number;
+  whatsapp_groups_link_only: number;
   sent_at: string | null;
   created_by_name: string;
+  created_at: string;
+};
+
+export type AnnouncementGroupDelivery = {
+  id: number;
+  class_name: string;
+  whatsapp_group_link: string;
+  status: string;
+  status_display: string;
+  error_message: string;
   created_at: string;
 };
 
@@ -540,6 +561,7 @@ export type AnnouncementDetail = AnnouncementListItem & {
     error_message: string;
     created_at: string;
   }[];
+  group_deliveries?: AnnouncementGroupDelivery[];
 };
 
 export type AnnouncementWritePayload = {
@@ -549,6 +571,7 @@ export type AnnouncementWritePayload = {
   audience_type: AnnouncementAudience;
   target_class_ids?: number[];
   channel: AnnouncementChannel;
+  post_to_whatsapp_groups?: boolean;
 };
 
 export const getAnnouncements = (params?: { category?: string; status?: string }) =>
@@ -567,7 +590,11 @@ export const deleteAnnouncement = (id: number) => api.delete(`/announcements/${i
 export const previewAnnouncementRecipients = (data: {
   audience_type: AnnouncementAudience;
   target_class_ids?: number[];
-}) => api.post<{ recipient_count: number }>('/announcements/preview_recipients/', data);
+}) =>
+  api.post<{ recipient_count: number; whatsapp_group_count: number }>(
+    '/announcements/preview_recipients/',
+    data
+  );
 
 export const sendAnnouncement = (id: number) =>
   api.post<{ message: string; announcement: AnnouncementDetail }>(`/announcements/${id}/send/`);

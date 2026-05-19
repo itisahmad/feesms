@@ -17,7 +17,10 @@ from .services import send_announcement
 
 
 class AnnouncementViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
-    queryset = Announcement.objects.select_related('created_by', 'school').prefetch_related('deliveries')
+    queryset = Announcement.objects.select_related('created_by', 'school').prefetch_related(
+        'deliveries',
+        'group_deliveries',
+    )
     permission_classes = [IsSchoolMember, HasModulePermission]
     module_key = 'announcements'
 
@@ -69,11 +72,19 @@ class AnnouncementViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         announcement.refresh_from_db()
+        group_part = ''
+        if stats.get('whatsapp_groups_targeted'):
+            group_part = (
+                f" Class WhatsApp groups: {stats['whatsapp_groups_posted']} posted, "
+                f"{stats['whatsapp_groups_link_only']} via parent link, "
+                f"{stats['whatsapp_groups_failed']} failed."
+            )
         return Response({
             'message': (
                 f"Sent to {stats['recipient_count']} parent(s). "
                 f"SMS: {stats['sent_sms']}, WhatsApp: {stats['sent_whatsapp']}, "
                 f"failures: {stats['failed_count']}."
+                f"{group_part}"
             ),
             'announcement': AnnouncementSerializer(announcement, context={'request': request}).data,
         })

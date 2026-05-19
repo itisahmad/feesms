@@ -259,6 +259,9 @@ def build_dashboard_stats(school, month: int, year: int) -> dict:
 
 
 def build_student_fee_history(student: Student) -> dict:
+    if student.school_class_id:
+        student = Student.objects.select_related('school_class').get(pk=student.pk)
+
     student_fees = (
         StudentFee.objects.filter(student=student)
         .select_related("fee_structure", "fee_structure__fee_type")
@@ -326,6 +329,7 @@ def build_student_fee_history(student: Student) -> dict:
         for choice in choices
     ]
 
+    school_class = student.school_class if student.school_class_id else None
     return {
         "student": {
             "id": student.id,
@@ -333,6 +337,8 @@ def build_student_fee_history(student: Student) -> dict:
             "class_name": student.get_class_display(),
             "school_class": student.school_class_id,
             "section": student.section_id,
+            "class_whatsapp_group_name": (school_class.whatsapp_group_name or '') if school_class else '',
+            "class_whatsapp_group_link": (school_class.whatsapp_group_link or '') if school_class else '',
             "admission_date": str(student.admission_date) if student.admission_date else None,
             "charges_effective_from": str(student.charges_effective_from) if student.charges_effective_from else None,
             "parent_name": student.parent_name,

@@ -62,9 +62,20 @@ class Announcement(models.Model):
         related_name='announcements_created',
     )
     recipient_count = models.PositiveIntegerField(default=0)
+    post_to_whatsapp_groups = models.BooleanField(
+        default=True,
+        help_text='When enabled, also post to class WhatsApp groups (Cloud API) or include group links in parent messages.',
+    )
     sent_sms = models.PositiveIntegerField(default=0)
     sent_whatsapp = models.PositiveIntegerField(default=0)
     failed_count = models.PositiveIntegerField(default=0)
+    whatsapp_groups_targeted = models.PositiveIntegerField(default=0)
+    whatsapp_groups_posted = models.PositiveIntegerField(default=0)
+    whatsapp_groups_failed = models.PositiveIntegerField(default=0)
+    whatsapp_groups_link_only = models.PositiveIntegerField(
+        default=0,
+        help_text='Classes with invite link only (no group JID); link included in parent messages.',
+    )
     sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -113,3 +124,30 @@ class AnnouncementDelivery(models.Model):
     class Meta:
         ordering = ['-created_at']
         verbose_name_plural = 'Announcement deliveries'
+
+
+class AnnouncementGroupDelivery(models.Model):
+    """Delivery log for class WhatsApp group posts."""
+
+    STATUS_POSTED = 'posted'
+    STATUS_LINK_IN_PARENT_MSG = 'link_in_parent_message'
+    STATUS_FAILED = 'failed'
+    STATUS_SKIPPED = 'skipped'
+    STATUS_CHOICES = [
+        (STATUS_POSTED, 'Posted to group'),
+        (STATUS_LINK_IN_PARENT_MSG, 'Link sent to parents'),
+        (STATUS_FAILED, 'Failed'),
+        (STATUS_SKIPPED, 'Skipped'),
+    ]
+
+    announcement = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name='group_deliveries')
+    school_class = models.ForeignKey(SchoolClass, on_delete=models.CASCADE, related_name='announcement_group_deliveries')
+    class_name = models.CharField(max_length=80)
+    whatsapp_group_link = models.URLField(max_length=500, blank=True)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['class_name']
+        verbose_name_plural = 'Announcement group deliveries'

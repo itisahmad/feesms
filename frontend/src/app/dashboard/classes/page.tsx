@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { GraduationCap, Plus, Trash2, Layers, IndianRupee, BookOpen } from 'lucide-react';
+import { GraduationCap, Plus, Trash2, Layers, IndianRupee, BookOpen, MessageCircle } from 'lucide-react';
 import {
   getClasses,
   createClass,
+  updateClass,
   deleteClass,
   addSection,
   addSubject,
@@ -47,8 +48,23 @@ interface SchoolClass {
   display_order: number;
   sections: Section[];
   subjects?: ClassSubject[];
+  whatsapp_group_name?: string;
+  whatsapp_group_link?: string;
+  whatsapp_group_id?: string;
   created_at: string;
 }
+
+type WhatsappGroupForm = {
+  whatsapp_group_name: string;
+  whatsapp_group_link: string;
+  whatsapp_group_id: string;
+};
+
+const emptyWhatsappForm = (): WhatsappGroupForm => ({
+  whatsapp_group_name: '',
+  whatsapp_group_link: '',
+  whatsapp_group_id: '',
+});
 
 export default function ClassesPage() {
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -65,6 +81,8 @@ export default function ClassesPage() {
   const [feeStructuresForClass, setFeeStructuresForClass] = useState<FeeStructure[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [editingWhatsappFor, setEditingWhatsappFor] = useState<number | null>(null);
+  const [whatsappForm, setWhatsappForm] = useState<WhatsappGroupForm>(emptyWhatsappForm);
 
   const load = () => {
     getClasses()
@@ -147,6 +165,38 @@ export default function ClassesPage() {
     }
   };
 
+  const openWhatsappEdit = (c: SchoolClass) => {
+    setEditingWhatsappFor(c.id);
+    setWhatsappForm({
+      whatsapp_group_name: c.whatsapp_group_name || '',
+      whatsapp_group_link: c.whatsapp_group_link || '',
+      whatsapp_group_id: c.whatsapp_group_id || '',
+    });
+    setError('');
+  };
+
+  const handleSaveWhatsapp = async (classId: number) => {
+    setError('');
+    setSaving(true);
+    try {
+      await updateClass(classId, {
+        whatsapp_group_name: whatsappForm.whatsapp_group_name.trim(),
+        whatsapp_group_link: whatsappForm.whatsapp_group_link.trim(),
+        whatsapp_group_id: whatsappForm.whatsapp_group_id.trim(),
+      });
+      setEditingWhatsappFor(null);
+      setWhatsappForm(emptyWhatsappForm());
+      load();
+    } catch (err: unknown) {
+      const axErr = err as { response?: { data?: Record<string, string | string[]> } };
+      const d = axErr?.response?.data;
+      const first = d && Object.values(d)[0];
+      setError(Array.isArray(first) ? first[0] : (first as string) || 'Failed to save WhatsApp group');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDelete = async (id: number, name: string) => {
     if (!confirm(`Delete class "${name}"? Students in this class will need to be reassigned.`)) return;
     try {
@@ -192,7 +242,7 @@ export default function ClassesPage() {
         eyebrow="School structure"
         title="Classes,"
         highlight="Sections & Subjects"
-        subtitle="Create a class with optional sections. Add subjects taught in each class anytime — subjects are independent and not required when creating a class."
+        subtitle="Create classes with optional sections and subjects. Optionally add a parents WhatsApp group per class — announcements can be posted there when you send updates."
         actions={
           <Button
             onClick={() => setShowForm(!showForm)}
@@ -408,6 +458,101 @@ export default function ClassesPage() {
                     </div>
                   </div>
                   <div>
+                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+                      Parents WhatsApp group (optional)
+                    </p>
+                    {editingWhatsappFor === c.id ? (
+                      <motion.div className="max-w-xl space-y-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                        <div>
+                          <label className={dash.label}>Group label</label>
+                          <input
+                            value={whatsappForm.whatsapp_group_name}
+                            onChange={(e) =>
+                              setWhatsappForm((f) => ({ ...f, whatsapp_group_name: e.target.value }))
+                            }
+                            className={dash.fieldSm}
+                            placeholder='e.g. "Class 5 Parents"'
+                          />
+                        </div>
+                        <div>
+                          <label className={dash.label}>Invite link</label>
+                          <input
+                            value={whatsappForm.whatsapp_group_link}
+                            onChange={(e) =>
+                              setWhatsappForm((f) => ({ ...f, whatsapp_group_link: e.target.value }))
+                            }
+                            className={dash.fieldSm}
+                            placeholder="https://chat.whatsapp.com/..."
+                          />
+                          <p className="mt-1 text-xs text-slate-500">
+                            Parents join manually. This link is included in announcement messages.
+                          </p>
+                        </div>
+                        <div>
+                          <label className={dash.label}>Group ID (optional, for auto-post)</label>
+                          <input
+                            value={whatsappForm.whatsapp_group_id}
+                            onChange={(e) =>
+                              setWhatsappForm((f) => ({ ...f, whatsapp_group_id: e.target.value }))
+                            }
+                            className={dash.fieldSm}
+                            placeholder="120363...@g.us — Meta Cloud API only"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveWhatsapp(c.id)}
+                            disabled={saving}
+                            className={dash.link}
+                          >
+                            {saving ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingWhatsappFor(null);
+                              setError('');
+                            }}
+                            className="text-sm text-slate-500"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {error && <p className="text-xs text-rose-400">{error}</p>}
+                      </motion.div>
+                    ) : (
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        {c.whatsapp_group_link ? (
+                          <>
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-sm text-emerald-200">
+                              <MessageCircle className="h-3.5 w-3.5" />
+                              {c.whatsapp_group_name || 'Parents group'}
+                            </span>
+                            <a
+                              href={c.whatsapp_group_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={dash.link}
+                            >
+                              Open invite link
+                            </a>
+                          </>
+                        ) : (
+                          <span className="text-sm text-slate-500">
+                            Not set — parents still receive direct SMS/WhatsApp
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openWhatsappEdit(c)}
+                          className={cn(dash.link, 'inline-flex items-center gap-1')}
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                          {c.whatsapp_group_link ? 'Edit group' : 'Add WhatsApp group'}
+                        </button>
+                      </div>
+                    )}
                     <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">Subjects taught</p>
                     <div className="flex flex-wrap gap-2">
                       {c.subjects?.map((sub) => (

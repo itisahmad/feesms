@@ -92,3 +92,54 @@ def send_whatsapp_message(to_phone: str, body: str):
         return False, 'Invalid TWILIO_WHATSAPP_FROM number.', None
 
     return _twilio_post_message(sender_value, f'whatsapp:{to_number}', body)
+
+
+def send_whatsapp_group_message(group_jid: str, body: str):
+    """
+    Post a text message to a WhatsApp group via Meta Cloud API.
+    Requires WHATSAPP_CLOUD_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, and class whatsapp_group_id.
+    Twilio WhatsApp does not support group messaging.
+    """
+    group_jid = (group_jid or '').strip()
+    if not group_jid:
+        return False, 'WhatsApp group ID is not configured for this class.', None
+
+    provider = os.getenv('MESSAGING_PROVIDER', 'mock').strip().lower()
+    if provider == 'mock':
+        return True, None, 'mock-wa-group'
+
+    token = os.getenv('WHATSAPP_CLOUD_ACCESS_TOKEN', '').strip()
+    phone_number_id = os.getenv('WHATSAPP_PHONE_NUMBER_ID', '').strip()
+    if not token or not phone_number_id:
+        return (
+            False,
+            'WhatsApp Cloud API not configured (WHATSAPP_CLOUD_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID).',
+            None,
+        )
+
+    url = f'https://graph.facebook.com/v21.0/{phone_number_id}/messages'
+    payload = json.dumps({
+        'messaging_product': 'whatsapp',
+        'to': group_jid,
+        'type': 'text',
+        'text': {'body': (body or '')[:4096]},
+    }).encode('utf-8')
+
+    req = urllib.request.Request(url, data=payload, method='POST')
+    req.add_header('Authorization', f'Bearer {token}')
+    req.add_header('Content-Type', 'application/json')
+
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            content = resp.read().decode('utf-8') or '{}'
+            data = json.loads(content)
+            msg_id = (data.get('messages') or [{}])[0].get('id')
+            return True, None, msg_id
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode('utf-8')
+        except Exception:
+            detail = str(exc)
+        return False, f'WhatsApp Cloud API error: {detail}', None
+    except Exception as exc:  # noqa: BLE001
+        return False, f'WhatsApp group request failed: {exc}', None

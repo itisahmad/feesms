@@ -2,8 +2,24 @@ from rest_framework import serializers
 
 from schools.models import SchoolClass
 
-from .models import Announcement, AnnouncementDelivery
-from .services import preview_recipient_count
+from .models import Announcement, AnnouncementDelivery, AnnouncementGroupDelivery
+from .services import preview_recipient_count, preview_whatsapp_group_count
+
+
+class AnnouncementGroupDeliverySerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = AnnouncementGroupDelivery
+        fields = [
+            'id',
+            'class_name',
+            'whatsapp_group_link',
+            'status',
+            'status_display',
+            'error_message',
+            'created_at',
+        ]
 
 
 class AnnouncementDeliverySerializer(serializers.ModelSerializer):
@@ -43,9 +59,14 @@ class AnnouncementListSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'recipient_count',
+            'post_to_whatsapp_groups',
             'sent_sms',
             'sent_whatsapp',
             'failed_count',
+            'whatsapp_groups_targeted',
+            'whatsapp_groups_posted',
+            'whatsapp_groups_failed',
+            'whatsapp_groups_link_only',
             'sent_at',
             'created_by_name',
             'created_at',
@@ -64,6 +85,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
     channel_display = serializers.CharField(source='get_channel_display', read_only=True)
     created_by_name = serializers.SerializerMethodField()
     deliveries = AnnouncementDeliverySerializer(many=True, read_only=True)
+    group_deliveries = AnnouncementGroupDeliverySerializer(many=True, read_only=True)
     target_class_names = serializers.SerializerMethodField()
 
     class Meta:
@@ -80,17 +102,23 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             'target_class_names',
             'channel',
             'channel_display',
+            'post_to_whatsapp_groups',
             'status',
             'status_display',
             'recipient_count',
             'sent_sms',
             'sent_whatsapp',
             'failed_count',
+            'whatsapp_groups_targeted',
+            'whatsapp_groups_posted',
+            'whatsapp_groups_failed',
+            'whatsapp_groups_link_only',
             'sent_at',
             'created_by_name',
             'created_at',
             'updated_at',
             'deliveries',
+            'group_deliveries',
         ]
         read_only_fields = [
             'status',
@@ -98,6 +126,10 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             'sent_sms',
             'sent_whatsapp',
             'failed_count',
+            'whatsapp_groups_targeted',
+            'whatsapp_groups_posted',
+            'whatsapp_groups_failed',
+            'whatsapp_groups_link_only',
             'sent_at',
             'created_at',
             'updated_at',
@@ -159,9 +191,9 @@ class RecipientPreviewSerializer(serializers.Serializer):
 
     def save(self, **kwargs):
         school = self.context['request'].user.school
-        count = preview_recipient_count(
-            school,
-            self.validated_data['audience_type'],
-            self.validated_data.get('target_class_ids') or [],
-        )
-        return {'recipient_count': count}
+        audience_type = self.validated_data['audience_type']
+        class_ids = self.validated_data.get('target_class_ids') or []
+        return {
+            'recipient_count': preview_recipient_count(school, audience_type, class_ids),
+            'whatsapp_group_count': preview_whatsapp_group_count(school, audience_type, class_ids),
+        }
