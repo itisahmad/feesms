@@ -509,7 +509,7 @@ export type AnnouncementCategory =
 
 export type AnnouncementAudience = 'all_parents' | 'classes';
 
-export type AnnouncementChannel = 'sms' | 'whatsapp' | 'both';
+export type AnnouncementChannel = 'sms' | 'whatsapp' | 'both' | 'class_groups';
 
 export type AnnouncementListItem = {
   id: number;
@@ -591,10 +591,11 @@ export const previewAnnouncementRecipients = (data: {
   audience_type: AnnouncementAudience;
   target_class_ids?: number[];
 }) =>
-  api.post<{ recipient_count: number; whatsapp_group_count: number }>(
-    '/announcements/preview_recipients/',
-    data
-  );
+  api.post<{
+    recipient_count: number;
+    whatsapp_group_count: number;
+    whatsapp_group_postable_count: number;
+  }>('/announcements/preview_recipients/', data);
 
 export const sendAnnouncement = (id: number) =>
   api.post<{ message: string; announcement: AnnouncementDetail }>(`/announcements/${id}/send/`);

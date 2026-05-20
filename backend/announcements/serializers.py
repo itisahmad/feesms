@@ -3,7 +3,11 @@ from rest_framework import serializers
 from schools.models import SchoolClass
 
 from .models import Announcement, AnnouncementDelivery, AnnouncementGroupDelivery
-from .services import preview_recipient_count, preview_whatsapp_group_count
+from .services import (
+    preview_recipient_count,
+    preview_whatsapp_group_count,
+    preview_whatsapp_group_postable_count,
+)
 
 
 class AnnouncementGroupDeliverySerializer(serializers.ModelSerializer):
@@ -173,6 +177,10 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         if self.instance and self.instance.status == Announcement.STATUS_SENT:
             raise serializers.ValidationError('Sent announcements cannot be edited.')
 
+        channel = attrs.get('channel', getattr(self.instance, 'channel', None))
+        if channel == Announcement.CHANNEL_CLASS_GROUPS:
+            attrs['post_to_whatsapp_groups'] = True
+
         return attrs
 
 class RecipientPreviewSerializer(serializers.Serializer):
@@ -196,4 +204,7 @@ class RecipientPreviewSerializer(serializers.Serializer):
         return {
             'recipient_count': preview_recipient_count(school, audience_type, class_ids),
             'whatsapp_group_count': preview_whatsapp_group_count(school, audience_type, class_ids),
+            'whatsapp_group_postable_count': preview_whatsapp_group_postable_count(
+                school, audience_type, class_ids
+            ),
         }

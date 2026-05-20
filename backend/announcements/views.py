@@ -72,19 +72,27 @@ class AnnouncementViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         announcement.refresh_from_db()
-        group_part = ''
-        if stats.get('whatsapp_groups_targeted'):
-            group_part = (
-                f" Class WhatsApp groups: {stats['whatsapp_groups_posted']} posted, "
-                f"{stats['whatsapp_groups_link_only']} via parent link, "
-                f"{stats['whatsapp_groups_failed']} failed."
+        if stats.get('class_groups_only'):
+            message = (
+                f"Posted to {stats['whatsapp_groups_posted']} class WhatsApp group(s). "
+                f"Targeted: {stats['whatsapp_groups_targeted']}, "
+                f"failed/skipped: {stats['whatsapp_groups_failed']}."
             )
-        return Response({
-            'message': (
+        else:
+            group_part = ''
+            if stats.get('whatsapp_groups_targeted'):
+                group_part = (
+                    f" Class WhatsApp groups: {stats['whatsapp_groups_posted']} posted, "
+                    f"{stats['whatsapp_groups_link_only']} via parent link, "
+                    f"{stats['whatsapp_groups_failed']} failed."
+                )
+            message = (
                 f"Sent to {stats['recipient_count']} parent(s). "
                 f"SMS: {stats['sent_sms']}, WhatsApp: {stats['sent_whatsapp']}, "
                 f"failures: {stats['failed_count']}."
                 f"{group_part}"
-            ),
+            )
+        return Response({
+            'message': message,
             'announcement': AnnouncementSerializer(announcement, context={'request': request}).data,
         })

@@ -33,10 +33,12 @@ class Announcement(models.Model):
     CHANNEL_SMS = 'sms'
     CHANNEL_WHATSAPP = 'whatsapp'
     CHANNEL_BOTH = 'both'
+    CHANNEL_CLASS_GROUPS = 'class_groups'
     CHANNEL_CHOICES = [
         (CHANNEL_SMS, 'SMS'),
         (CHANNEL_WHATSAPP, 'WhatsApp'),
         (CHANNEL_BOTH, 'SMS + WhatsApp'),
+        (CHANNEL_CLASS_GROUPS, 'Class WhatsApp groups only'),
     ]
 
     STATUS_DRAFT = 'draft'

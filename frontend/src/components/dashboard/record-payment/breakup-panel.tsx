@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import {
   computeSelectedMonthlyTotal,
   computeSelectedYearlyTotals,
@@ -47,7 +48,20 @@ function BreakupLines({
   paymentPreview,
   selectedFeeStructureIds,
 }: Pick<BreakupPanelProps, 'payMode' | 'month' | 'year' | 'paymentPreview' | 'selectedFeeStructureIds'>) {
-  const [expandedFeeType, setExpandedFeeType] = useState<string | null>(null);
+  const [expandedFeeTypes, setExpandedFeeTypes] = useState<Set<string>>(new Set());
+
+  const toggleFeeType = (feeType: string) => {
+    setExpandedFeeTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(feeType)) next.delete(feeType);
+      else next.add(feeType);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    setExpandedFeeTypes(new Set());
+  }, [payMode, paymentPreview, selectedFeeStructureIds.join(',')]);
 
   const monthlyBreakdown = paymentPreview
     ? filterBreakdownBySelection(paymentPreview.monthly.breakdown, selectedFeeStructureIds)
@@ -88,57 +102,66 @@ function BreakupLines({
         const hasDiscount = totalBefore > totalAfter;
         const discountPct =
           hasDiscount && totalBefore > 0 ? Math.round(((totalBefore - totalAfter) / totalBefore) * 100) : 0;
+        const sortedItems = [...items].sort(
+          (a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0)
+        );
+        const isExpanded = expandedFeeTypes.has(feeType);
         return (
           <div key={feeType} className="border-b border-teal-500/15 pb-1 last:border-0 last:pb-0">
             <button
               type="button"
-              onClick={() => setExpandedFeeType((prev) => (prev === feeType ? null : feeType))}
-              className="-mx-1 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left transition hover:bg-white/10"
+              onClick={() => toggleFeeType(feeType)}
+              aria-expanded={isExpanded}
+              className="-mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1.5 text-left transition hover:bg-white/10"
             >
-              <span className="flex items-center gap-1 font-medium text-slate-200">
-                <span className={`inline-block text-xs transition-transform ${expandedFeeType === feeType ? 'rotate-90' : ''}`}>
-                  ▶
-                </span>
-                {feeType}
+              <span className="flex min-w-0 items-center gap-1.5 font-medium text-slate-200">
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 shrink-0 text-slate-500 transition-transform',
+                    isExpanded && 'rotate-180'
+                  )}
+                  aria-hidden
+                />
+                <span className="truncate">{feeType}</span>
               </span>
-              <span className="text-right">
+              <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5 text-right">
                 {hasDiscount ? (
                   <>
-                    <span className="mr-1 text-sm text-slate-500 line-through">₹{totalBefore.toLocaleString('en-IN')}</span>
+                    <span className="text-sm text-slate-500 line-through">
+                      ₹{totalBefore.toLocaleString('en-IN')}
+                    </span>
                     <span className="font-medium text-emerald-400">₹{totalAfter.toLocaleString('en-IN')}</span>
-                    <span className="ml-1 text-xs text-emerald-400">({discountPct}% off)</span>
+                    <span className="text-xs text-emerald-400">({discountPct}% off)</span>
                   </>
                 ) : (
                   <span className="font-medium text-amber-400">₹{totalAfter.toLocaleString('en-IN')}</span>
                 )}
               </span>
             </button>
-            {expandedFeeType === feeType && (
-              <div className="ml-4 mt-1 space-y-0.5 border-l border-teal-500/30 pl-2">
-                {items
-                  .sort((a, b) => (a.year ?? 0) * 12 + (a.month ?? 0) - (b.year ?? 0) * 12 - (b.month ?? 0))
-                  .map((f, idx2) => {
-                    const itemHasDiscount = (f.after_discount ?? f.balance) < f.balance;
-                    const itemPct =
-                      f.discount_percent ??
-                      (f.balance > 0
-                        ? Math.round(((f.balance - (f.after_discount ?? f.balance)) / f.balance) * 100)
-                        : 0);
-                    return (
-                      <div key={idx2} className="flex justify-between text-sm text-slate-400">
-                        <span>{f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}</span>
-                        {itemHasDiscount ? (
-                          <span>
-                            <span className="mr-1 text-slate-500 line-through">₹{f.balance.toLocaleString('en-IN')}</span>
-                            <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
-                            <span className="ml-1 text-xs text-emerald-400">({itemPct}% off)</span>
-                          </span>
-                        ) : (
+            {isExpanded && (
+              <div className="mb-1 ml-5 mt-0.5 space-y-0.5 border-l border-teal-500/30 pl-2">
+                {sortedItems.map((f, idx2) => {
+                  const itemHasDiscount = (f.after_discount ?? f.balance) < f.balance;
+                  const itemPct =
+                    f.discount_percent ??
+                    (f.balance > 0
+                      ? Math.round(((f.balance - (f.after_discount ?? f.balance)) / f.balance) * 100)
+                      : 0);
+                  return (
+                    <div key={idx2} className="flex justify-between gap-2 text-sm text-slate-400">
+                      <span>{f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}</span>
+                      {itemHasDiscount ? (
+                        <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-1.5 text-right">
+                          <span className="text-slate-500 line-through">₹{f.balance.toLocaleString('en-IN')}</span>
                           <span>₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
-                        )}
-                      </div>
-                    );
-                  })}
+                          <span className="text-xs text-emerald-400">({itemPct}% off)</span>
+                        </span>
+                      ) : (
+                        <span className="shrink-0">₹{(f.after_discount ?? f.balance).toLocaleString('en-IN')}</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -168,7 +191,12 @@ export function BreakupPanel({
 
   return (
     <>
-      <div className="max-h-36 space-y-1.5 overflow-y-auto text-sm">
+      <div
+        className={cn(
+          'space-y-1.5 overflow-y-auto text-sm',
+          payMode === 'yearly' ? 'max-h-48' : 'max-h-36'
+        )}
+      >
         {breakupLoading ? (
           <RecordPaymentLoadingLine label="Calculating breakup…" />
         ) : (

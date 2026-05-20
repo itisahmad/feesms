@@ -50,11 +50,18 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'config.urls'
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# CORS - Allow Next.js frontend
-CORS_ALLOWED_ORIGINS = [
+# CORS - Next.js dev often uses 3000 or 3001; production via CORS_ALLOWED_ORIGINS env
+_default_cors_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
 ]
+_cors_env = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+if _cors_env:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = _default_cors_origins
 CORS_ALLOW_CREDENTIALS = True
 
 # REST Framework

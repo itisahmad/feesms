@@ -41,9 +41,10 @@ const CATEGORY_OPTIONS: { value: AnnouncementCategory; label: string }[] = [
 ];
 
 const CHANNEL_OPTIONS = [
-  { value: 'both', label: 'SMS + WhatsApp' },
-  { value: 'sms', label: 'SMS only' },
-  { value: 'whatsapp', label: 'WhatsApp only' },
+  { value: 'both', label: 'SMS + WhatsApp (parents)' },
+  { value: 'sms', label: 'SMS only (parents)' },
+  { value: 'whatsapp', label: 'WhatsApp only (parents)' },
+  { value: 'class_groups', label: 'Class WhatsApp groups only' },
 ];
 
 const categoryBadge: Record<string, string> = {
@@ -84,10 +85,13 @@ export default function AnnouncementsPage() {
   const [form, setForm] = useState(emptyForm);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [whatsappGroupCount, setWhatsappGroupCount] = useState<number | null>(null);
+  const [whatsappGroupPostableCount, setWhatsappGroupPostableCount] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isClassGroupsOnly = form.channel === 'class_groups';
 
   const loadList = useCallback(() => {
     setLoading(true);
@@ -109,6 +113,7 @@ export default function AnnouncementsPage() {
       if (audience_type === 'classes' && !target_class_ids.length) {
         setRecipientCount(0);
         setWhatsappGroupCount(0);
+        setWhatsappGroupPostableCount(0);
         return;
       }
       setPreviewLoading(true);
@@ -116,10 +121,12 @@ export default function AnnouncementsPage() {
         .then(({ data }) => {
           setRecipientCount(data.recipient_count);
           setWhatsappGroupCount(data.whatsapp_group_count ?? 0);
+          setWhatsappGroupPostableCount(data.whatsapp_group_postable_count ?? 0);
         })
         .catch(() => {
           setRecipientCount(null);
           setWhatsappGroupCount(null);
+          setWhatsappGroupPostableCount(null);
         })
         .finally(() => setPreviewLoading(false));
     },
@@ -158,6 +165,7 @@ export default function AnnouncementsPage() {
     setForm(emptyForm());
     setRecipientCount(null);
     setWhatsappGroupCount(null);
+    setWhatsappGroupPostableCount(null);
     setComposeOpen(true);
   };
 
@@ -224,11 +232,21 @@ export default function AnnouncementsPage() {
       setError('Select at least one class.');
       return;
     }
-    if (!recipientCount) {
-      setError('No parents match this audience. Check class selection and student phones.');
-      return;
+    if (isClassGroupsOnly) {
+      if (!whatsappGroupPostableCount) {
+        setError(
+          'No class can receive a group post. Add WhatsApp group ID on Classes (invite link alone is not enough for this channel).'
+        );
+        return;
+      }
+      if (!confirm(`Post this message to ${whatsappGroupPostableCount} class WhatsApp group(s)?`)) return;
+    } else {
+      if (!recipientCount) {
+        setError('No parents match this audience. Check class selection and student phones.');
+        return;
+      }
+      if (!confirm(`Send this message to ${recipientCount} parent(s)?`)) return;
     }
-    if (!confirm(`Send this message to ${recipientCount} parent(s)?`)) return;
 
     setSending(true);
     setError(null);
@@ -469,7 +487,22 @@ export default function AnnouncementsPage() {
               <div className="mt-2 flex items-center gap-2 text-sm text-teal-300/90">
                 <Users className="h-4 w-4 shrink-0" />
                 {previewLoading ? (
-                  <span className="text-slate-500">Counting parents…</span>
+                  <span className="text-slate-500">Counting reach…</span>
+                ) : isClassGroupsOnly ? (
+                  whatsappGroupPostableCount != null ? (
+                    <span>
+                      Will post to <strong>{whatsappGroupPostableCount}</strong> class WhatsApp group(s)
+                      {whatsappGroupCount != null && whatsappGroupCount > whatsappGroupPostableCount && (
+                        <span className="text-amber-400/90">
+                          {' '}
+                          ({whatsappGroupCount - whatsappGroupPostableCount} class(es) have only invite link — add group
+                          ID on Classes)
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-slate-500">Select audience to preview groups</span>
+                  )
                 ) : recipientCount != null ? (
                   <span>
                     Will reach <strong>{recipientCount}</strong> parent phone(s)
@@ -486,27 +519,42 @@ export default function AnnouncementsPage() {
               </div>
             </div>
 
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={form.post_to_whatsapp_groups}
-                onChange={(e) => setForm((f) => ({ ...f, post_to_whatsapp_groups: e.target.checked }))}
-                className="mt-0.5 rounded accent-teal-500"
-              />
-              <span>
-                Also notify class WhatsApp groups (post to group if configured, otherwise include join link in parent
-                messages)
-              </span>
-            </label>
-
             <div>
               <label className={dash.label}>Channel</label>
               <DashboardSelect
                 value={form.channel}
-                onChange={(v) => setForm((f) => ({ ...f, channel: v as AnnouncementChannel }))}
+                onChange={(v) => {
+                  const channel = v as AnnouncementChannel;
+                  setForm((f) => ({
+                    ...f,
+                    channel,
+                    post_to_whatsapp_groups: channel === 'class_groups' ? true : f.post_to_whatsapp_groups,
+                  }));
+                }}
                 options={CHANNEL_OPTIONS}
               />
+              {isClassGroupsOnly && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Sends only to class WhatsApp groups (Meta Cloud API). No SMS or parent WhatsApp. Each class needs a
+                  group ID on the Classes page.
+                </p>
+              )}
             </div>
+
+            {!isClassGroupsOnly && (
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.post_to_whatsapp_groups}
+                  onChange={(e) => setForm((f) => ({ ...f, post_to_whatsapp_groups: e.target.checked }))}
+                  className="mt-0.5 rounded accent-teal-500"
+                />
+                <span>
+                  Also notify class WhatsApp groups (post to group if configured, otherwise include join link in parent
+                  messages)
+                </span>
+              </label>
+            )}
 
             <div className="flex flex-wrap gap-2 pt-2">
               {canCreate(MODULE) && (
@@ -528,7 +576,7 @@ export default function AnnouncementsPage() {
                   className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500 text-white"
                 >
                   <Send className="mr-2 h-4 w-4" />
-                  {sending ? 'Sending…' : 'Send to parents'}
+                  {sending ? 'Sending…' : isClassGroupsOnly ? 'Post to class groups' : 'Send to parents'}
                 </Button>
               )}
             </div>

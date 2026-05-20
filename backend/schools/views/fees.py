@@ -27,6 +27,7 @@ from ..serializers import (
 )
 from ..default_fee_types import ensure_default_fee_types_for_school
 from ..fee_periods import is_struct_billable_for_period
+from ..yearly_fee_preview import build_yearly_preview_breakdown
 from ..bulk_fee_collection import (
     get_paid_fee_structure_ids_for_monthly,
     get_payable_fee_structure_ids_for_monthly,
@@ -260,53 +261,13 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
                 'paid_fee_structure_ids': paid_fee_structure_ids,
             })
 
-        yearly_breakdown = []
-        yearly_total = 0
-        yearly_total_before_discount = 0
-        for struct in structs_to_use:
-            choice = choices.get(struct.id)
-            if choice and choice.effective_from:
-                eff_y, eff_m = choice.effective_from.year, choice.effective_from.month
-            else:
-                eff_y, eff_m = None, None
-            for m, y in months_years:
-                if not is_struct_billable_for_period(struct, m, y, student, choice):
-                    continue
-                if eff_y is not None and (y < eff_y or (y == eff_y and m < eff_m)):
-                    continue
-                eff_from = getattr(student, 'charges_effective_from', None) or student.admission_date
-                if eff_from:
-                    try:
-                        _, last_day = calendar.monthrange(y, m)
-                        if eff_from > date(y, m, last_day):
-                            continue
-                    except (ValueError, TypeError):
-                        pass
-                sf = StudentFee.objects.filter(
-                    student_id=student_id,
-                    fee_structure_id=struct.id,
-                    month=m,
-                    year=y,
-                ).prefetch_related('payments').first()
-                if not sf:
-                    continue
-                paid = sum(float(p.amount) for p in sf.payments.all())
-                balance = float(sf.total_amount) - paid
-                if balance > 0:
-                    discount_pct = float(struct.yearly_discount_percent or 0) / 100 if struct.allow_yearly_payment else 0
-                    discount_pct_display = float(struct.yearly_discount_percent or 0)
-                    after_discount = balance * (1 - discount_pct)
-                    yearly_breakdown.append({
-                        'fee_type': struct.fee_type.name,
-                        'fee_structure_id': struct.id,
-                        'month': m,
-                        'year': y,
-                        'balance': round(balance, 2),
-                        'after_discount': round(after_discount, 2),
-                        'discount_percent': round(discount_pct * 100, 2),
-                    })
-                    yearly_total += after_discount
-                    yearly_total_before_discount += balance
+        yearly_breakdown, yearly_total, yearly_total_before_discount = build_yearly_preview_breakdown(
+            student,
+            int(student_id),
+            structs_to_use,
+            months_years,
+            choices,
+        )
 
         return Response({
             'monthly': {'amount': round(monthly_total, 2), 'breakdown': monthly_breakdown},
