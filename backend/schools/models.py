@@ -52,7 +52,7 @@ class School(models.Model):
     fee_start_day = models.IntegerField(
         default=1,
         validators=[MinValueValidator(1), MaxValueValidator(28)],
-        help_text='Charges from current month apply only when student joins on/before this day.',
+        help_text='School billing day (1–28): used when adding students to decide if the join month is billed.',
     )
     trial_ends_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -13,12 +13,12 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from .fee_periods import is_struct_billable_for_period
+from .late_fine import unpaid_balance
 from .models import FeePayment, FeeStructure, Student, StudentFee
 
 
-def _student_fee_balance(sf: StudentFee) -> float:
-    paid = sum(float(p.amount) for p in sf.payments.all())
-    return float(sf.total_amount) - paid
+def _student_fee_balance(sf: StudentFee, as_of: date | None = None) -> float:
+    return unpaid_balance(sf, as_of)
 
 
 def parse_payment_adjustment(data):
@@ -194,8 +194,7 @@ def pay_all_pending_operation(user, data, payment_mode=None, notes_override=None
 
     to_pay = []
     for sf in student_fees:
-        paid = sum(float(p.amount) for p in sf.payments.all())
-        balance = float(sf.total_amount) - paid
+        balance = _student_fee_balance(sf, payment_date)
         if balance > 0:
             to_pay.append((sf, balance))
 
@@ -269,9 +268,17 @@ def compute_razorpay_amount_pay_all_pending(
     if selected_fee_structure_ids is not None:
         student_fees = student_fees.filter(fee_structure_id__in=selected_fee_structure_ids)
 
+    as_of = date.today()
+    raw_payment_date = (adjustment_data or {}).get("payment_date") if adjustment_data else None
+    if raw_payment_date:
+        try:
+            as_of = date.fromisoformat(str(raw_payment_date))
+        except (ValueError, TypeError):
+            pass
+
     total = Decimal("0")
     for sf in student_fees:
-        balance = _student_fee_balance(sf)
+        balance = _student_fee_balance(sf, as_of)
         if balance > 0:
             total += Decimal(str(balance))
 
@@ -431,11 +438,10 @@ def pay_all_year_operation(user, data, payment_mode=None, notes_override=None):
                         "amount": struct.amount,
                         "late_fine": 0,
                         "total_amount": struct.amount,
-                        "due_date": date(y, m, min(struct.due_day, 28)),
+                        "due_date": struct.due_date_for(m, y),
                     },
                 )
-                paid = sum(float(p.amount) for p in sf.payments.all())
-                balance = float(sf.total_amount) - paid
+                balance = _student_fee_balance(sf, payment_date)
                 if balance > 0:
                     discount_pct = float(struct.yearly_discount_percent or 0) / 100 if struct.allow_yearly_payment else 0
                     to_pay.append((sf, balance, discount_pct))
@@ -495,6 +501,14 @@ def compute_razorpay_amount_pay_all_year(
     student = Student.objects.filter(school=school, id=student_id).prefetch_related("fee_structure_choices").first()
     if not student:
         return None, "Student not found"
+
+    as_of = date.today()
+    raw_payment_date = (adjustment_data or {}).get("payment_date") if adjustment_data else None
+    if raw_payment_date:
+        try:
+            as_of = date.fromisoformat(str(raw_payment_date))
+        except (ValueError, TypeError):
+            pass
 
     start_month = getattr(school, "academic_year_start_month", 4) or 4
     if month >= start_month:
@@ -598,11 +612,10 @@ def compute_razorpay_amount_pay_all_year(
                         "amount": struct.amount,
                         "late_fine": 0,
                         "total_amount": struct.amount,
-                        "due_date": date(y, m, min(struct.due_day, 28)),
+                        "due_date": struct.due_date_for(m, y),
                     },
                 )
-                paid = sum(float(p.amount) for p in sf.payments.all())
-                balance = float(sf.total_amount) - paid
+                balance = _student_fee_balance(sf, as_of)
                 if balance > 0:
                     discount_pct = float(struct.yearly_discount_percent or 0) / 100 if struct.allow_yearly_payment else 0
                     to_pay.append((sf, balance, discount_pct))

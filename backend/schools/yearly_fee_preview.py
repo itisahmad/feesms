@@ -5,15 +5,24 @@ import calendar
 from datetime import date
 
 from .fee_periods import is_struct_billable_for_period
-from .models import StudentFee
+from .late_fine import compute_late_fine_for_structure, refresh_student_fee_late_fine, unpaid_balance
+from .models import FeeStructure, StudentFee
 
 
-def period_balance(student_fee: StudentFee | None, struct_amount) -> float:
-    """Unpaid balance for one billable period; projected from structure if no fee row yet."""
+def period_balance(
+    student_fee: StudentFee | None,
+    fee_structure: FeeStructure,
+    month: int,
+    year: int,
+    as_of: date | None = None,
+) -> float:
+    """Unpaid balance for one billable period; includes late fine as of as_of."""
+    as_of = as_of or date.today()
     if student_fee:
-        paid = sum(float(p.amount) for p in student_fee.payments.all())
-        return max(0.0, float(student_fee.total_amount) - paid)
-    return float(struct_amount)
+        return unpaid_balance(student_fee, as_of)
+    base = float(fee_structure.amount)
+    late = float(compute_late_fine_for_structure(fee_structure, month, year, as_of))
+    return base + late
 
 
 def should_include_period(student, struct, choice, m: int, y: int) -> bool:
@@ -40,6 +49,7 @@ def build_yearly_preview_breakdown(
     structs_to_use,
     months_years: list[tuple[int, int]],
     choices: dict,
+    as_of: date | None = None,
 ) -> tuple[list[dict], float, float]:
     """
     Returns (breakdown_items, total_after_discount, total_before_discount).
@@ -70,16 +80,26 @@ def build_yearly_preview_breakdown(
             if not should_include_period(student, struct, choice, m, y):
                 continue
             sf = fee_by_key.get((struct.id, m, y))
-            balance = period_balance(sf, struct.amount)
+            balance = period_balance(sf, struct, m, y, as_of)
             if balance <= 0:
                 continue
             after_discount = balance * (1 - discount_pct)
+            late_fine = 0.0
+            base_amount = float(struct.amount)
+            if sf:
+                refresh_student_fee_late_fine(sf, as_of)
+                late_fine = float(sf.late_fine)
+                base_amount = float(sf.amount)
+            else:
+                late_fine = float(compute_late_fine_for_structure(struct, m, y, as_of))
             yearly_breakdown.append({
                 'fee_type': struct.fee_type.name,
                 'fee_structure_id': struct.id,
                 'month': m,
                 'year': y,
                 'balance': round(balance, 2),
+                'amount': round(base_amount, 2),
+                'late_fine': round(late_fine, 2),
                 'after_discount': round(after_discount, 2),
                 'discount_percent': round(discount_pct_display, 2),
             })

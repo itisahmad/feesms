@@ -95,6 +95,50 @@ class SchoolClassViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         section = Section.objects.create(school_class=school_class, name=name, display_order=order)
         return Response(SectionSerializer(section).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['post', 'patch'])
+    def update_section(self, request, pk=None):
+        school_class = self.get_object()
+        section_id = request.data.get('section_id')
+        name = request.data.get('name', '').strip()
+        if not section_id:
+            return Response({'error': 'section_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not name:
+            return Response({'error': 'Section name required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            section = Section.objects.get(pk=section_id, school_class=school_class)
+        except Section.DoesNotExist:
+            return Response({'error': 'Section not found'}, status=status.HTTP_404_NOT_FOUND)
+        if Section.objects.filter(school_class=school_class, name=name).exclude(pk=section_id).exists():
+            return Response({'error': f'Section "{name}" already exists'}, status=status.HTTP_400_BAD_REQUEST)
+        section.name = name
+        section.save(update_fields=['name'])
+        return Response(SectionSerializer(section).data)
+
+    @action(detail=True, methods=['post'])
+    def remove_section(self, request, pk=None):
+        school_class = self.get_object()
+        school = request.user.school
+        section_id = request.data.get('section_id')
+        if not section_id:
+            return Response({'error': 'section_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            section = Section.objects.get(pk=section_id, school_class=school_class)
+        except Section.DoesNotExist:
+            return Response({'error': 'Section not found'}, status=status.HTTP_404_NOT_FOUND)
+        students_in_section = Student.objects.filter(school=school, section=section).count()
+        if students_in_section:
+            return Response(
+                {
+                    'error': (
+                        f'Cannot delete section "{section.name}": {students_in_section} student(s) '
+                        'are assigned to it. Reassign them to another section first.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        section.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=['post'])
     def add_subject(self, request, pk=None):
         school_class = self.get_object()

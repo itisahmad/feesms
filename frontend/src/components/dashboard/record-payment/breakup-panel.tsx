@@ -84,6 +84,11 @@ function BreakupLines({
           <div key={idx} className="flex justify-between gap-4">
             <span className="text-slate-300">
               {f.fee_type} {f.month && f.year ? `(${MONTHS[f.month]} ${f.year})` : ''}
+              {f.late_fine != null && f.late_fine > 0 ? (
+                <span className="block text-xs text-rose-300/90">
+                  incl. late fine ₹{f.late_fine.toLocaleString('en-IN')}
+                </span>
+              ) : null}
             </span>
             <span className="font-medium text-amber-400">₹{f.balance.toLocaleString('en-IN')}</span>
           </div>
@@ -149,7 +154,14 @@ function BreakupLines({
                       : 0);
                   return (
                     <div key={idx2} className="flex justify-between gap-2 text-sm text-slate-400">
-                      <span>{f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}</span>
+                      <span>
+                        {f.month && f.year ? `${MONTHS[f.month]} ${f.year}` : 'Other'}
+                        {f.late_fine != null && f.late_fine > 0 ? (
+                          <span className="block text-xs text-rose-300/80">
+                            late ₹{f.late_fine.toLocaleString('en-IN')}
+                          </span>
+                        ) : null}
+                      </span>
                       {itemHasDiscount ? (
                         <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-1.5 text-right">
                           <span className="text-slate-500 line-through">₹{f.balance.toLocaleString('en-IN')}</span>

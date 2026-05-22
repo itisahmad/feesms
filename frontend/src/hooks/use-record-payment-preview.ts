@@ -19,6 +19,7 @@ type UseRecordPaymentPreviewArgs = {
   studentId: number;
   month: number;
   year: number;
+  paymentDate: string;
   payMode: PayMode;
   allClassFeeStructureIds: number[];
   selectedFeeStructureIds: number[];
@@ -30,6 +31,7 @@ export function useRecordPaymentPreview({
   studentId,
   month,
   year,
+  paymentDate,
   payMode,
   allClassFeeStructureIds,
   selectedFeeStructureIds,
@@ -49,7 +51,7 @@ export function useRecordPaymentPreview({
 
   useEffect(() => {
     previewCacheRef.current.clear();
-  }, [studentId, month, year, payMode]);
+  }, [studentId, month, year, payMode, paymentDate]);
 
   useEffect(() => {
     if (!allClassFeeStructureIds.length) {
@@ -116,7 +118,10 @@ export function useRecordPaymentPreview({
     setBreakupLoading(true);
 
     const timer = window.setTimeout(() => {
-      getPaymentPreview(studentId, month, year, payableSelected, { breakupMode: payMode })
+      getPaymentPreview(studentId, month, year, payableSelected, {
+        breakupMode: payMode,
+        paymentDate,
+      })
         .then(({ data }) => {
           if (cancelled || requestId !== breakupRequestIdRef.current) return;
           previewCacheRef.current.set(cacheKey, data);
@@ -139,7 +144,16 @@ export function useRecordPaymentPreview({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [feeMetaReady, selectionInitialized, studentId, month, year, payMode, selectedIdsKey(selectedFeeStructureIds)]);
+  }, [
+    feeMetaReady,
+    selectionInitialized,
+    studentId,
+    month,
+    year,
+    paymentDate,
+    payMode,
+    selectedIdsKey(selectedFeeStructureIds),
+  ]);
 
   return {
     paymentPreview,

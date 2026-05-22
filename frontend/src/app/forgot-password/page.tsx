@@ -33,19 +33,21 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 via-amber-50/30 to-teal-50 p-4">
       <div className="auth-surface w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
         <h1 className="mb-2 text-xl font-semibold text-gray-900">Forgot password</h1>
-        <p className="mb-6 text-sm text-gray-600">Enter username or email to generate reset link.</p>
+        <p className="mb-6 text-sm text-gray-600">
+          School owners: enter your registered email. Staff: enter your username.
+        </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="identifier" className="mb-1.5 block text-sm font-medium text-gray-700">
-              Username or email
+              Email or username
             </label>
             <input
               id="identifier"
               type="text"
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder="Username or email"
+              placeholder="Owner: email · Staff: username"
               className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-500 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/25"
               required
             />

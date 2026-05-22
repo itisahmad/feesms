@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from schools.fee_periods import is_struct_billable_for_period
+from schools.late_fine import unpaid_balance
 from schools.models import Student, StudentFee, StudentFeeStructureChoice
 
 
@@ -81,8 +82,8 @@ def build_collection_summary(school, month: int, year: int) -> dict:
         if not _should_include_fee(sf, choice_ids_map, choice_map):
             continue
         paid = _paid_amount(sf)
-        total = float(sf.total_amount)
-        balance = total - paid
+        balance = unpaid_balance(sf)
+        total = balance + paid
         class_name = (
             sf.student.school_class.name
             if sf.student.school_class
@@ -123,6 +124,8 @@ def build_collection_summary(school, month: int, year: int) -> dict:
             "month": sf.month,
             "year": sf.year,
             "total": total,
+            "amount": float(sf.amount),
+            "late_fine": float(sf.late_fine),
             "paid": paid,
             "balance": balance,
             "status": _fee_status(total, paid),
@@ -203,8 +206,8 @@ def build_dashboard_stats(school, month: int, year: int) -> dict:
 
     for sf in student_fees.select_related("student", "student__school_class"):
         paid = _paid_amount(sf)
-        total = float(sf.total_amount)
-        balance = total - paid
+        balance = unpaid_balance(sf)
+        total = balance + paid
         class_name = (
             sf.student.school_class.name
             if sf.student.school_class

@@ -129,9 +129,19 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
             except (ValueError, TypeError):
                 return Response({'error': 'fee_structure_ids must be comma-separated integers'}, status=400)
         month, year = int(month), int(year)
+        preview_as_of = date.today()
+        raw_preview_date = request.query_params.get('payment_date')
+        if raw_preview_date:
+            try:
+                preview_as_of = date.fromisoformat(str(raw_preview_date))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid payment_date'}, status=400)
+
         student = Student.objects.filter(school=school, id=student_id).prefetch_related('fee_structure_choices').first()
         if not student:
             return Response({'error': 'Student not found'}, status=404)
+
+        from ..late_fine import unpaid_balance
 
         monthly_breakdown = []
         monthly_total = 0
@@ -145,14 +155,15 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
             if selected_fee_structure_ids is not None:
                 monthly_fees = monthly_fees.filter(fee_structure_id__in=selected_fee_structure_ids)
             for sf in monthly_fees:
-                paid = sum(float(p.amount) for p in sf.payments.all())
-                balance = float(sf.total_amount) - paid
+                balance = unpaid_balance(sf, preview_as_of)
                 if balance > 0:
                     monthly_breakdown.append({
                         'fee_type': sf.fee_structure.fee_type.name,
                         'fee_structure_id': sf.fee_structure_id,
                         'month': sf.month,
                         'year': sf.year,
+                        'amount': round(float(sf.amount), 2),
+                        'late_fine': round(float(sf.late_fine), 2),
                         'balance': round(balance, 2),
                     })
                     monthly_total += balance
@@ -267,6 +278,7 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
             structs_to_use,
             months_years,
             choices,
+            preview_as_of,
         )
 
         return Response({
@@ -352,11 +364,11 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
                         'amount': struct.amount,
                         'late_fine': 0,
                         'total_amount': struct.amount,
-                        'due_date': date(y, m, min(struct.due_day, 28)),
+                        'due_date': struct.due_date_for(m, y),
                     }
                 )
-                paid = sum(float(p.amount) for p in sf.payments.all())
-                balance = float(sf.total_amount) - paid
+                from ..late_fine import unpaid_balance
+                balance = unpaid_balance(sf, payment_date)
                 if balance > 0:
                     to_pay.append((sf, balance))
             if not to_pay:
@@ -530,9 +542,10 @@ class StudentFeeViewSet(SchoolNestedMixin, viewsets.ModelViewSet):
             year=year
         ).select_related('student').prefetch_related('payments')
 
-        for sf in student_fees:
-            paid = sum(p.amount for p in sf.payments.all())
-            balance = float(sf.total_amount) - float(paid)
+        from ..late_fine import unpaid_balance
+
+        for sf in student_fees.select_related('fee_structure'):
+            balance = unpaid_balance(sf)
             if balance <= 0:
                 continue
 

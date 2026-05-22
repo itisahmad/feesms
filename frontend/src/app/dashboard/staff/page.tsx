@@ -41,7 +41,6 @@ const initialForm = () => ({
   username: '',
   first_name: '',
   last_name: '',
-  email: '',
   phone: '',
   password: '',
   password2: '',
@@ -183,7 +182,7 @@ export default function StaffPage() {
         <div className="border-b border-white/10 px-6 py-4">
           <h2 className={dash.sectionTitle}>Add staff login</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Set login details and module permissions. No separate role is needed — permissions define what they can do.
+            Staff sign in with <span className="text-slate-300">username + password</span> only (not email). Set permissions below.
           </p>
         </div>
         <form onSubmit={handleCreate} className="space-y-6 p-6">
@@ -191,8 +190,9 @@ export default function StaffPage() {
             <input
               value={form.username}
               onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-              placeholder="Username"
+              placeholder="Username (for sign-in)"
               className={dash.field}
+              autoComplete="off"
               required
             />
             <input
@@ -205,13 +205,6 @@ export default function StaffPage() {
               value={form.last_name}
               onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
               placeholder="Last name"
-              className={dash.field}
-            />
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              placeholder="Email"
               className={dash.field}
             />
             <input

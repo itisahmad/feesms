@@ -3,6 +3,7 @@ REST API Serializers
 """
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.db.models import Q
 from datetime import date
 from .models import (
     User,
@@ -86,8 +87,16 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'password2', 'first_name', 'last_name', 'phone',
+        fields = ['email', 'password', 'password2', 'first_name', 'last_name', 'phone',
                   'school_name', 'school_city', 'school_phone']
+
+    def validate_email(self, value):
+        email = (value or '').strip().lower()
+        if not email:
+            raise serializers.ValidationError('Email is required.')
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError('An account with this email already exists.')
+        return email
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
@@ -122,9 +131,12 @@ class RegisterSerializer(serializers.ModelSerializer):
             sc = SchoolClass.objects.create(school=school, name=name, display_order=i)
             Section.objects.create(school_class=sc, name='A', display_order=0)
 
+        from .auth_utils import make_unique_username_for_email
+
+        email = validated_data['email']
         user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data.get('email', ''),
+            username=make_unique_username_for_email(email),
+            email=email,
             password=validated_data['password'],
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
@@ -145,7 +157,6 @@ class StaffUserCreateSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'username',
-            'email',
             'first_name',
             'last_name',
             'phone',
@@ -153,6 +164,16 @@ class StaffUserCreateSerializer(serializers.ModelSerializer):
             'password2',
             'module_permissions',
         ]
+
+    def validate_username(self, value):
+        username = (value or '').strip()
+        if not username:
+            raise serializers.ValidationError('Username is required.')
+        if '@' in username:
+            raise serializers.ValidationError('Staff username cannot be an email address.')
+        if User.objects.filter(username__iexact=username).exists():
+            raise serializers.ValidationError('This username is already taken.')
+        return username
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
@@ -163,6 +184,7 @@ class StaffUserCreateSerializer(serializers.ModelSerializer):
         validated_data.pop('password2')
         password = validated_data.pop('password')
         validated_data.setdefault('role', 'staff')
+        validated_data['email'] = ''
         return User.objects.create_user(password=password, **validated_data)
 
 
@@ -480,10 +502,43 @@ class StudentListSerializer(serializers.ModelSerializer):
 
 class FeeTypeSerializer(serializers.ModelSerializer):
     billing_period_display = serializers.CharField(source='get_billing_period_display', read_only=True)
-    
+    can_edit = serializers.SerializerMethodField()
+
     class Meta:
         model = FeeType
-        fields = ['id', 'name', 'billing_period', 'billing_period_display', 'is_system', 'description']
+        fields = [
+            'id', 'name', 'billing_period', 'billing_period_display', 'is_system', 'description', 'can_edit',
+        ]
+
+    def get_can_edit(self, obj):
+        if obj.is_system and obj.school_id is None:
+            return False
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'school_id', None):
+            return False
+        return obj.school_id == request.user.school_id
+
+    def validate_name(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('Fee type name is required.')
+        return value
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        school = getattr(request.user, 'school', None) if request else None
+        if not school:
+            return attrs
+        name = attrs.get('name')
+        if name is None and self.instance:
+            name = self.instance.name
+        if name:
+            qs = FeeType.objects.filter(school=school, name__iexact=name.strip())
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({'name': 'A fee type with this name already exists for your school.'})
+        return attrs
 
 
 class FeeStructureSerializer(serializers.ModelSerializer):
@@ -504,6 +559,100 @@ class FeeStructureSerializer(serializers.ModelSerializer):
             StudentFeeStructureChoice.objects.filter(fee_structure=obj).exists() or
             StudentFee.objects.filter(fee_structure=obj).exists()
         )
+
+
+class FeeStructureBulkCreateSerializer(serializers.Serializer):
+    """Create the same fee structure for multiple classes in one request."""
+
+    fee_type = serializers.PrimaryKeyRelatedField(queryset=FeeType.objects.none())
+    school_class_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        min_length=1,
+    )
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0)
+    due_day = serializers.IntegerField(min_value=1, max_value=28, default=5)
+    late_fine_per_day = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, default=0)
+    academic_year = serializers.CharField(max_length=20)
+    allow_yearly_payment = serializers.BooleanField(default=True)
+    yearly_discount_percent = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, default=0)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        school = getattr(request.user, 'school', None) if request else None
+        if school:
+            self.fields['fee_type'].queryset = FeeType.objects.filter(
+                Q(school=school) | Q(school__isnull=True, is_system=True)
+            )
+
+    def validate_fee_type(self, value):
+        school = self.context['request'].user.school
+        if not school:
+            raise serializers.ValidationError('Invalid fee type.')
+        if not FeeType.objects.filter(
+            Q(school=school) | Q(school__isnull=True, is_system=True),
+            id=value.id,
+        ).exists():
+            raise serializers.ValidationError('Invalid fee type.')
+        return value
+
+    def validate_school_class_ids(self, value):
+        school = self.context['request'].user.school
+        if not school:
+            raise serializers.ValidationError('No school assigned.')
+        valid_ids = set(
+            SchoolClass.objects.filter(school=school, id__in=value).values_list('id', flat=True)
+        )
+        invalid = [cid for cid in value if cid not in valid_ids]
+        if invalid:
+            raise serializers.ValidationError(f'Invalid class id(s): {", ".join(str(i) for i in invalid)}')
+        return list(dict.fromkeys(value))
+
+    def create(self, validated_data):
+        school = self.context['request'].user.school
+        class_ids = validated_data['school_class_ids']
+        fee_type = validated_data['fee_type']
+        academic_year = validated_data['academic_year']
+
+        created = []
+        skipped = []
+
+        for class_id in class_ids:
+            if FeeStructure.objects.filter(
+                school=school,
+                fee_type=fee_type,
+                school_class_id=class_id,
+                academic_year=academic_year,
+            ).exists():
+                school_class = SchoolClass.objects.filter(pk=class_id).first()
+                skipped.append({
+                    'school_class_id': class_id,
+                    'class_name': school_class.name if school_class else str(class_id),
+                    'reason': 'Fee structure already exists for this class and academic year.',
+                })
+                continue
+            structure = FeeStructure.objects.create(
+                school=school,
+                fee_type=fee_type,
+                school_class_id=class_id,
+                amount=validated_data['amount'],
+                due_day=validated_data['due_day'],
+                late_fine_per_day=validated_data['late_fine_per_day'],
+                academic_year=academic_year,
+                allow_yearly_payment=validated_data['allow_yearly_payment'],
+                yearly_discount_percent=validated_data['yearly_discount_percent'],
+            )
+            created.append(structure)
+
+        if not created and skipped:
+            raise serializers.ValidationError({
+                'school_class_ids': 'Fee already exists for all selected classes in this academic year.',
+            })
+        if not created:
+            raise serializers.ValidationError('No fee structures were created.')
+
+        return {'created': created, 'skipped': skipped}
 
 
 class FeePaymentSerializer(serializers.ModelSerializer):

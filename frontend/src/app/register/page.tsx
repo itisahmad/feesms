@@ -8,7 +8,6 @@ import { register } from '@/lib/api';
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({
-    username: '',
     email: '',
     password: '',
     password2: '',
@@ -92,25 +91,19 @@ export default function RegisterPage() {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input
-                name="username"
-                value={form.username}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 outline-none"
-                required
-              />
-              {error.username && <p className="text-red-600 text-sm mt-1">{error.username}</p>}
-            </div>
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input
                 name="email"
                 type="email"
+                autoComplete="email"
                 value={form.email}
                 onChange={handleChange}
                 className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 outline-none"
+                placeholder="you@school.com"
+                required
               />
+              {error.email && <p className="text-red-600 text-sm mt-1">{error.email}</p>}
+              <p className="mt-1 text-xs text-gray-500">You will sign in with this email and your password.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>

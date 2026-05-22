@@ -4,6 +4,8 @@ export type FeeBreakdownItem = {
   month?: number;
   year?: number;
   balance: number;
+  amount?: number;
+  late_fine?: number;
   after_discount?: number;
   discount_percent?: number;
 };

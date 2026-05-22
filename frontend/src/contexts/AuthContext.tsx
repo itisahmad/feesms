@@ -7,7 +7,7 @@ import { useAuthStore, type AuthState, type AuthUser } from '@/stores/authStore'
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (loginId: string, password: string) => Promise<void>;
   logout: () => void;
   setUser: (u: AuthUser | null) => void;
   refreshUser: () => Promise<AuthUser | null>;
@@ -29,8 +29,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initializeAuth();
   }, [initializeAuth]);
 
-  const login = async (username: string, password: string) => {
-    await loginToStore(username, password);
+  const login = async (loginId: string, password: string) => {
+    await loginToStore(loginId, password);
     router.push('/');
   };
 

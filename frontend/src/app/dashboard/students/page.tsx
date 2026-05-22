@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Users, Plus, Search } from 'lucide-react';
+import { Users, Plus, Search, Info } from 'lucide-react';
 import { getStudents, createStudent, updateStudent, getClasses, getFeeStructures, getStudentFeeHistory, getSchool } from '@/lib/api';
 import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
@@ -96,6 +96,7 @@ export default function StudentsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [feeStartDay, setFeeStartDay] = useState(1);
+  const [chargesHelpOpen, setChargesHelpOpen] = useState(false);
 
   const selectedClass = classes.find((c) => c.id === parseInt(form.school_class || '0'));
   const sectionsForClass = selectedClass?.sections || [];
@@ -226,6 +227,7 @@ export default function StudentsPage() {
     setEditingId(null);
     setShowForm(false);
     setForm(getInitialStudentForm());
+    setChargesHelpOpen(false);
     setError('');
   };
 
@@ -278,6 +280,7 @@ export default function StudentsPage() {
       setForm(getInitialStudentForm());
       setShowForm(false);
       setEditingId(null);
+      setChargesHelpOpen(false);
       loadStudents();
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: Record<string, string[]> } };
@@ -407,8 +410,29 @@ export default function StudentsPage() {
               />
             </div>
             <div>
-              <label className={dash.label}>Charges apply from</label>
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <label htmlFor="charges_effective_from" className={cn(dash.label, 'mb-0')}>
+                  Charges apply from
+                </label>
+                <button
+                  type="button"
+                  id="charges-apply-from-help-trigger"
+                  onClick={() => setChargesHelpOpen((open) => !open)}
+                  aria-label="How charges apply from works"
+                  aria-expanded={chargesHelpOpen}
+                  aria-controls="charges-apply-from-help"
+                  className={cn(
+                    'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition',
+                    chargesHelpOpen
+                      ? 'border-teal-400/50 bg-teal-500/20 text-teal-300'
+                      : 'border-white/15 bg-white/5 text-slate-400 hover:border-teal-400/40 hover:bg-teal-500/10 hover:text-teal-300'
+                  )}
+                >
+                  <Info className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </div>
               <input
+                id="charges_effective_from"
                 type="date"
                 value={form.charges_effective_from}
                 onChange={(e) => {
@@ -421,10 +445,26 @@ export default function StudentsPage() {
                 }}
                 className={dash.field}
               />
-              <p className="mt-1 text-xs text-slate-500">Defaults to admission date. Can be changed to a future date if charges start later.</p>
-              <p className="mt-1 text-xs text-slate-500">
-                School fee start day is {feeStartDay}. If admission is on or before this day, current month can be charged. If admission is after this day (e.g. 28-Apr with start day 1), default becomes 1-May so April is not charged.
-              </p>
+              {chargesHelpOpen && (
+                <div
+                  id="charges-apply-from-help"
+                  role="region"
+                  aria-labelledby="charges-apply-from-help-trigger"
+                  className="mt-2 space-y-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-xs leading-relaxed text-slate-400"
+                >
+                  <p>Think in months — the month on the date you pick is when billing starts.</p>
+                  <ul className="list-disc space-y-1 pl-4">
+                    <li>
+                      Pick any date in <span className="text-slate-300">this month</span> → fees are calculated for{' '}
+                      <span className="text-slate-300">this month</span>.
+                    </li>
+                    <li>
+                      Want fees from <span className="text-slate-300">next month</span>? Pick any date in next month (e.g. 1 May if
+                      the student joined in April).
+                    </li>
+                  </ul>
+                </div>
+              )}
             </div>
             {feeStructures.length > 0 && (
               <div className="md:col-span-2">

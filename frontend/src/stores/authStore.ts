@@ -26,7 +26,7 @@ export interface AuthState {
   setUser: (user: AuthUser | null) => void;
   refreshUser: () => Promise<AuthUser | null>;
   initializeAuth: () => Promise<void>;
-  login: (username: string, password: string) => Promise<void>;
+  login: (loginId: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -75,8 +75,8 @@ export const useAuthStore = create<AuthState>((set: (partial: Partial<AuthState>
     }
   },
 
-  login: async (username: string, password: string) => {
-    const { data } = await apiLogin(username, password);
+  login: async (loginId: string, password: string) => {
+    const { data } = await apiLogin(loginId, password);
     if (typeof window !== 'undefined') {
       localStorage.setItem('access', data.access);
       localStorage.setItem('refresh', data.refresh);

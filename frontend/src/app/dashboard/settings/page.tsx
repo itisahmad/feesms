@@ -383,7 +383,7 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className={cn(dash.label, 'mb-1 text-xs')}>Fee start day</label>
+                  <label className={cn(dash.label, 'mb-1 text-xs')}>School billing day</label>
                   <input
                     type="number"
                     min={1}
@@ -391,7 +391,11 @@ export default function SettingsPage() {
                     value={feeStartDay}
                     onChange={(e) => setFeeStartDay(Math.max(1, Math.min(28, parseInt(e.target.value || '1', 10))))}
                     className={compactField}
+                    aria-describedby="school-billing-day-help"
                   />
+                  <p id="school-billing-day-help" className="mt-1.5 text-xs leading-relaxed text-slate-500">
+                    Day of each month (1–28) your school uses for fee cycles. When you add a student, this decides whether their join month is billed or billing starts next month.
+                  </p>
                 </div>
               </div>
               <div className="mt-3 flex justify-end">

@@ -40,7 +40,6 @@ api.interceptors.response.use(
 
 // Auth
 export const register = (data: {
-  username: string;
   email: string;
   password: string;
   password2: string;
@@ -52,8 +51,9 @@ export const register = (data: {
   school_phone?: string;
 }) => api.post('/auth/register/', data);
 
-export const login = (username: string, password: string) =>
-  api.post('/token/', { username, password });
+/** Owners: email + password. Staff: username + password. */
+export const login = (loginId: string, password: string) =>
+  api.post('/token/', { login: loginId, password });
 
 export const getMe = () => api.get('/auth/me/');
 export const forgotPassword = (username_or_email: string) =>
@@ -66,7 +66,6 @@ export const getStaffUsers = () => api.get('/staff-users/');
 export const getStaffModuleDefinitions = () => api.get('/staff-users/module-definitions/');
 export const createStaffUser = (data: {
   username: string;
-  email?: string;
   first_name?: string;
   last_name?: string;
   phone?: string;
@@ -122,6 +121,10 @@ export const createClass = (data: {
 }) => api.post('/classes/', data);
 export const addSection = (classId: number, name: string) =>
   api.post(`/classes/${classId}/add_section/`, { name });
+export const updateSection = (classId: number, sectionId: number, name: string) =>
+  api.post(`/classes/${classId}/update_section/`, { section_id: sectionId, name });
+export const removeSection = (classId: number, sectionId: number) =>
+  api.post(`/classes/${classId}/remove_section/`, { section_id: sectionId });
 export const addSubject = (classId: number, name: string) =>
   api.post(`/classes/${classId}/add_subject/`, { name });
 export const removeSubject = (classId: number, subjectId: number) =>
@@ -162,7 +165,26 @@ export const deleteFeeType = (id: number) => api.delete(`/fee-types/${id}/`);
 // Fee structures
 export const getFeeStructures = (schoolClassId?: number) =>
   api.get('/fee-structures/', { params: schoolClassId ? { school_class: schoolClassId } : {} });
-export const createFeeStructure = (data: object) => api.post('/fee-structures/', data);
+export type FeeStructureBulkCreatePayload = {
+  fee_type: number;
+  school_class_ids: number[];
+  amount: number;
+  due_day?: number;
+  late_fine_per_day?: number;
+  academic_year: string;
+  allow_yearly_payment?: boolean;
+  yearly_discount_percent?: number;
+};
+
+export type FeeStructureBulkCreateResponse = {
+  created: unknown[];
+  created_count: number;
+  skipped: { school_class_id: number; class_name: string; reason: string }[];
+  message: string;
+};
+
+export const createFeeStructure = (data: FeeStructureBulkCreatePayload | Record<string, unknown>) =>
+  api.post<FeeStructureBulkCreateResponse | unknown>('/fee-structures/', data);
 export const updateFeeStructure = (id: number, data: object) =>
   api.patch(`/fee-structures/${id}/`, data);
 export const deleteFeeStructure = (id: number) => api.delete(`/fee-structures/${id}/`);
@@ -215,7 +237,7 @@ export const getPaymentPreview = (
   month: number,
   year: number,
   feeStructureIds?: number[],
-  options?: { metaOnly?: boolean; breakupMode?: 'monthly' | 'yearly' }
+  options?: { metaOnly?: boolean; breakupMode?: 'monthly' | 'yearly'; paymentDate?: string }
 ) =>
   api.get('/student-fees/payment_preview/', {
     params: {
@@ -225,6 +247,7 @@ export const getPaymentPreview = (
       ...(feeStructureIds?.length ? { fee_structure_ids: feeStructureIds.join(',') } : {}),
       ...(options?.metaOnly ? { meta_only: '1' } : {}),
       ...(options?.breakupMode ? { breakup_mode: options.breakupMode } : {}),
+      ...(options?.paymentDate ? { payment_date: options.paymentDate } : {}),
     },
   });
 export const getReceipt = (studentFeeId: number) =>

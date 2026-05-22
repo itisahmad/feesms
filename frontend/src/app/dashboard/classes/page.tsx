@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { GraduationCap, Plus, Trash2, Layers, IndianRupee, BookOpen, MessageCircle } from 'lucide-react';
+import { GraduationCap, Plus, Trash2, Layers, IndianRupee, BookOpen, MessageCircle, Pencil } from 'lucide-react';
 import {
   getClasses,
   createClass,
   updateClass,
   deleteClass,
   addSection,
+  updateSection,
+  removeSection,
   addSubject,
   removeSubject,
   applyFeeToClass,
@@ -74,6 +76,8 @@ export default function ClassesPage() {
   const [newSectionNames, setNewSectionNames] = useState('');
   const [addingSectionTo, setAddingSectionTo] = useState<number | null>(null);
   const [newSectionName, setNewSectionName] = useState('');
+  const [editingSection, setEditingSection] = useState<{ classId: number; sectionId: number } | null>(null);
+  const [editSectionName, setEditSectionName] = useState('');
   const [addingSubjectTo, setAddingSubjectTo] = useState<number | null>(null);
   const [newSubjectName, setNewSubjectName] = useState('');
   const [applyingFeeTo, setApplyingFeeTo] = useState<number | null>(null);
@@ -135,6 +139,46 @@ export default function ClassesPage() {
       setError(axErr?.response?.data?.error || 'Failed to add section');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openSectionEdit = (classId: number, section: Section) => {
+    setEditingSection({ classId, sectionId: section.id });
+    setEditSectionName(section.name);
+    setAddingSectionTo(null);
+    setError('');
+  };
+
+  const handleSaveSection = async () => {
+    if (!editingSection || !editSectionName.trim()) return;
+    setError('');
+    setSaving(true);
+    try {
+      await updateSection(editingSection.classId, editingSection.sectionId, editSectionName.trim());
+      setEditingSection(null);
+      setEditSectionName('');
+      load();
+    } catch (err: unknown) {
+      const axErr = err as { response?: { data?: { error?: string } } };
+      setError(axErr?.response?.data?.error || 'Failed to update section');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveSection = async (classId: number, sectionId: number, sectionName: string) => {
+    if (!confirm(`Delete section "${sectionName}"? This cannot be undone.`)) return;
+    setError('');
+    try {
+      await removeSection(classId, sectionId);
+      if (editingSection?.sectionId === sectionId) {
+        setEditingSection(null);
+        setEditSectionName('');
+      }
+      load();
+    } catch (err: unknown) {
+      const axErr = err as { response?: { data?: { error?: string } } };
+      alert(axErr?.response?.data?.error || 'Failed to delete section');
     }
   };
 
@@ -443,16 +487,63 @@ export default function ClassesPage() {
                 <div className="space-y-3 pl-[52px]">
                   <div>
                     <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">Sections</p>
-                    <div className="flex flex-wrap gap-2">
-                      {c.sections?.map((s) => (
-                        <span
-                          key={s.id}
-                          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-sm font-medium text-slate-300"
-                        >
-                          {s.name}
-                        </span>
-                      ))}
-                      {(!c.sections || c.sections.length === 0) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {c.sections?.map((s) =>
+                        editingSection?.classId === c.id && editingSection.sectionId === s.id ? (
+                          <div key={s.id} className="flex items-center gap-1.5">
+                            <input
+                              value={editSectionName}
+                              onChange={(e) => setEditSectionName(e.target.value)}
+                              className={cn(dash.fieldSm, 'w-24')}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveSection();
+                                if (e.key === 'Escape') {
+                                  setEditingSection(null);
+                                  setEditSectionName('');
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <button type="button" onClick={handleSaveSection} disabled={saving} className={dash.link}>
+                              {saving ? '…' : 'Save'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingSection(null);
+                                setEditSectionName('');
+                              }}
+                              className="text-sm text-slate-500"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <span
+                            key={s.id}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-3 pr-1.5 text-sm font-medium text-slate-300"
+                          >
+                            {s.name}
+                            <button
+                              type="button"
+                              onClick={() => openSectionEdit(c.id, s)}
+                              className="rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-teal-300"
+                              aria-label={`Edit section ${s.name}`}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSection(c.id, s.id, s.name)}
+                              className="rounded p-0.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"
+                              aria-label={`Delete section ${s.name}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </span>
+                        )
+                      )}
+                      {(!c.sections || c.sections.length === 0) && !editingSection && (
                         <span className="text-sm text-slate-500">None yet</span>
                       )}
                     </div>

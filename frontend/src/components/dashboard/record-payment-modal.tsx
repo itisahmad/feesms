@@ -115,6 +115,7 @@ export function RecordPaymentModal({
     studentId: student.student_id,
     month,
     year,
+    paymentDate: paymentForm.payment_date,
     payMode,
     allClassFeeStructureIds,
     selectedFeeStructureIds,

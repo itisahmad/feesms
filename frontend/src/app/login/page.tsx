@@ -9,7 +9,7 @@ const inputClass =
   'w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-500 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/25';
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,10 +25,10 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(username, password);
+      await login(loginId.trim(), password);
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: { detail?: string } } };
-      setError(axErr?.response?.data?.detail || 'Invalid username or password');
+      setError(axErr?.response?.data?.detail || 'Invalid email/username or password');
     } finally {
       setLoading(false);
     }
@@ -48,19 +48,22 @@ export default function LoginPage() {
               <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>
             )}
             <div>
-              <label htmlFor="username" className={labelClass}>
-                Username
+              <label htmlFor="loginId" className={labelClass}>
+                Email or username
               </label>
               <input
-                id="username"
+                id="loginId"
                 type="text"
                 autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
                 className={inputClass}
-                placeholder="Enter username"
+                placeholder="School owner: your email · Staff: username"
                 required
               />
+              <p className="mt-1.5 text-xs text-gray-500">
+                School owners use the email from registration. Staff use the username created by the owner.
+              </p>
             </div>
             <div>
               <div className="mb-1.5 flex items-center justify-between gap-2">

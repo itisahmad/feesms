@@ -21,7 +21,7 @@ from ..messaging import send_sms_message, send_whatsapp_message
 from ..serializers import (
     UserSerializer, RegisterSerializer, SchoolSerializer, SchoolClassSerializer, SectionSerializer,
     StaffUserCreateSerializer, StaffUserUpdateSerializer, ForgotPasswordSerializer, ResetPasswordSerializer,
-    StudentSerializer, FeeTypeSerializer, FeeStructureSerializer,
+    StudentSerializer, FeeTypeSerializer, FeeStructureSerializer, FeeStructureBulkCreateSerializer,
     StudentFeeSerializer, StudentFeeCreateSerializer, FeePaymentSerializer,
     ExpenseCategorySerializer, VendorSerializer, ExpenseSerializer, BudgetSerializer, ExpenseReportSerializer
 )
@@ -77,7 +77,14 @@ class FeeTypeViewSet(viewsets.ModelViewSet):
         school = self.request.user.school
         if not school:
             return FeeType.objects.none()
-        return FeeType.objects.filter(Q(school=school) | Q(school__isnull=True, is_system=True))
+        school_types = FeeType.objects.filter(school=school).order_by('name')
+        school_names = school_types.values_list('name', flat=True)
+        system_types = (
+            FeeType.objects.filter(school__isnull=True, is_system=True)
+            .exclude(name__in=school_names)
+            .order_by('name')
+        )
+        return (school_types | system_types).order_by('name')
 
     def perform_create(self, serializer):
         from rest_framework.exceptions import ValidationError
@@ -115,6 +122,32 @@ class FeeStructureViewSet(viewsets.ModelViewSet):
     serializer_class = FeeStructureSerializer
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     module_key = "fee_structure"
+
+    def create(self, request, *args, **kwargs):
+        if 'school_class_ids' in request.data:
+            serializer = FeeStructureBulkCreateSerializer(
+                data=request.data,
+                context={'request': request},
+            )
+            serializer.is_valid(raise_exception=True)
+            result = serializer.save()
+            created = result['created']
+            skipped = result['skipped']
+            return Response(
+                {
+                    'created': FeeStructureSerializer(
+                        created, many=True, context={'request': request}
+                    ).data,
+                    'created_count': len(created),
+                    'skipped': skipped,
+                    'message': (
+                        f'Added fee to {len(created)} class(es).'
+                        + (f' Skipped {len(skipped)} (already exists).' if skipped else '')
+                    ),
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        return super().create(request, *args, **kwargs)
 
     def get_queryset(self):
         school = self.request.user.school
