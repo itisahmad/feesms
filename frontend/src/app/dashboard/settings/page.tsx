@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Settings, Check, Upload, Building2, User } from 'lucide-react';
+import { Settings, Check, Upload, Building2, User, Copy, Share2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getMe, getSchool, updateSchool, upgradeSchoolPlan, type SchoolRecord } from '@/lib/api';
+import { getMe, getSchool, getPaymentConfig, updatePaymentConfig, updateSchool, upgradeSchoolPlan, type SchoolRecord } from '@/lib/api';
 import { formatSchoolPlanLabel } from '@/lib/plan-labels';
 import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
@@ -106,10 +106,44 @@ export default function SettingsPage() {
   const [email, setEmail] = useState('');
   const [startMonth, setStartMonth] = useState(4);
   const [feeStartDay, setFeeStartDay] = useState(1);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [messageCopied, setMessageCopied] = useState(false);
+  const [allowParentOnlinePayment, setAllowParentOnlinePayment] = useState(false);
+  const [savingParentPayment, setSavingParentPayment] = useState(false);
+  const [parentPaymentSaved, setParentPaymentSaved] = useState(false);
+
+  const parentPortalUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}/parent/login` : '/parent/login';
+
+  const parentShareMessage = school?.public_code
+    ? `${school.name} parent portal\nSchool code: ${school.public_code}\nSign in: ${parentPortalUrl}\nUse your registered mobile number and password.`
+    : '';
+
+  const copySchoolCode = async () => {
+    if (!school?.public_code) return;
+    try {
+      await navigator.clipboard.writeText(school.public_code);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      alert('Could not copy school code.');
+    }
+  };
+
+  const copyParentMessage = async () => {
+    if (!parentShareMessage) return;
+    try {
+      await navigator.clipboard.writeText(parentShareMessage);
+      setMessageCopied(true);
+      setTimeout(() => setMessageCopied(false), 2000);
+    } catch {
+      alert('Could not copy message.');
+    }
+  };
 
   useEffect(() => {
-    Promise.all([getSchool(), getMe()])
-      .then(([schoolRes, meRes]) => {
+    Promise.all([getSchool(), getMe(), getPaymentConfig().catch(() => null)])
+      .then(([schoolRes, meRes, paymentRes]) => {
         const s = resolveSchoolPayload(schoolRes.data);
         if (s) {
           setSchool(s);
@@ -122,6 +156,9 @@ export default function SettingsPage() {
           setStartMonth(s.academic_year_start_month ?? 4);
           setFeeStartDay(s.fee_start_day ?? 1);
           setLogoPreview(logoDisplayUrl(s));
+        }
+        if (paymentRes?.data) {
+          setAllowParentOnlinePayment(!!paymentRes.data.allow_parent_online_payment);
         }
         const me = meRes.data;
         if (me) {
@@ -194,6 +231,20 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveParentPaymentSetting = async () => {
+    setSavingParentPayment(true);
+    setParentPaymentSaved(false);
+    try {
+      await updatePaymentConfig({ allow_parent_online_payment: allowParentOnlinePayment });
+      setParentPaymentSaved(true);
+      setTimeout(() => setParentPaymentSaved(false), 2500);
+    } catch {
+      alert('Failed to save parent payment setting');
+    } finally {
+      setSavingParentPayment(false);
+    }
+  };
+
   const handleSaveAcademic = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!school) return;
@@ -254,6 +305,102 @@ export default function SettingsPage() {
         title="Settings"
         subtitle="School profile, academic calendar, and plan."
       />
+
+      {school.public_code ? (
+        <GlassCard delay={0.02}>
+          <SectionHead icon={Share2} title="School code for parents" hint="Parent portal" />
+          <div className={cardBody}>
+            <p className="mb-3 text-sm text-slate-400">
+              Share this code with parents so they can register and sign in to the parent portal using their mobile number.
+            </p>
+            <div className="rounded-xl border border-teal-500/25 bg-teal-500/10 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">School code</p>
+              <p className="mt-1 font-mono text-2xl font-semibold tracking-wide text-teal-200">
+                {school.public_code}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                School ID: {school.id} · {school.name}
+              </p>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={copySchoolCode}
+                className="h-8 rounded-lg border-white/15 bg-white/5 text-xs text-slate-200"
+              >
+                {codeCopied ? (
+                  <>
+                    <Check className="mr-1.5 h-3.5 w-3.5" /> Code copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy code
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={copyParentMessage}
+                className="h-8 rounded-lg border-white/15 bg-white/5 text-xs text-slate-200"
+              >
+                {messageCopied ? (
+                  <>
+                    <Check className="mr-1.5 h-3.5 w-3.5" /> Message copied
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="mr-1.5 h-3.5 w-3.5" /> Copy message for parents
+                  </>
+                )}
+              </Button>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">
+              Parents open{' '}
+              <a href={parentPortalUrl} target="_blank" rel="noopener noreferrer" className="text-teal-300 hover:underline">
+                {parentPortalUrl}
+              </a>{' '}
+              and enter this school code with the mobile number registered at admission.
+            </p>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={allowParentOnlinePayment}
+                  onChange={(e) => setAllowParentOnlinePayment(e.target.checked)}
+                  className="mt-0.5 rounded border-white/20 bg-white/5 text-teal-500 focus:ring-teal-500/30"
+                />
+                <span>
+                  <span className="text-sm font-medium text-slate-200">Allow parents to pay fees online</span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    When enabled, parents see a Pay button on unpaid months in the parent portal (Razorpay). When disabled, online payment is hidden.
+                  </span>
+                </span>
+              </label>
+              <div className="mt-3 flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={savingParentPayment}
+                  onClick={handleSaveParentPaymentSetting}
+                  className="h-8 rounded-lg border-0 bg-teal-600 px-4 text-xs"
+                >
+                  {savingParentPayment ? 'Saving…' : parentPaymentSaved ? (
+                    <>
+                      <Check className="mr-1 h-3.5 w-3.5" /> Saved
+                    </>
+                  ) : (
+                    'Save parent payment setting'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+      ) : null}
 
       <div className="space-y-4">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] xl:items-start">

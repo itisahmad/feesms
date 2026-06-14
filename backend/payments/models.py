@@ -14,6 +14,10 @@ class SchoolPaymentConfig(models.Model):
         help_text="Razorpay Route linked account id for parent-to-school settlement.",
     )
     active = models.BooleanField(default=True)
+    allow_parent_online_payment = models.BooleanField(
+        default=False,
+        help_text="When enabled, parents can pay pending fees online via Razorpay in the parent portal.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

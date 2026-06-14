@@ -51,4 +51,7 @@ def resolve_user_for_login(login: str, password: str):
     if not check_password(password, user.password):
         return None, ("Invalid email or password." if "@" in login else "Invalid username or password.")
 
+    if user.role == "parent":
+        return None, "Parents must sign in with school code at the parent portal."
+
     return user, None

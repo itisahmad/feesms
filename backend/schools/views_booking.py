@@ -1,14 +1,14 @@
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from rest_framework import status
 import os
 from datetime import datetime, timedelta
+from schools.permissions import IsSchoolStaff
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsSchoolStaff])
 def booking_slots(request):
     """
     Get available booking slots
@@ -57,7 +57,7 @@ def booking_slots(request):
     })
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsSchoolStaff])
 def book_slot(request):
     """
     Book a specific slot

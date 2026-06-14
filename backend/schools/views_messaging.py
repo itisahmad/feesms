@@ -47,8 +47,11 @@ def _build_message_body(*, school, student: Student, message_type: str, custom_m
     )
 
 
+from .permissions import IsSchoolStaff
+
+
 class SchoolMessagingSettingsView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def get(self, request):
         school = request.user.school
@@ -71,7 +74,7 @@ class SchoolMessagingSettingsView(APIView):
 
 
 class SendMessageView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def post(self, request):
         school = request.user.school

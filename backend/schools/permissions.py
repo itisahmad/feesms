@@ -4,6 +4,30 @@ from rest_framework.permissions import BasePermission
 from .module_permissions import has_module_permission, is_owner, viewset_action_to_permission
 
 
+def _is_parent(user) -> bool:
+    return bool(user and getattr(user, "is_authenticated", False) and getattr(user, "role", None) == "parent")
+
+
+class IsParent(BasePermission):
+    message = "Parent access only."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(_is_parent(user) and user.school_id and (user.phone or "").strip())
+
+
+class IsSchoolStaff(BasePermission):
+    """Authenticated school owner/staff — not parents."""
+
+    message = "Staff access only."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated or _is_parent(user):
+            return False
+        return bool(user.school_id)
+
+
 class IsSchoolOwner(BasePermission):
     message = "Only the school owner can perform this action."
 
@@ -19,7 +43,9 @@ class IsSchoolMember(BasePermission):
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and user.school_id)
+        if not user or not user.is_authenticated or _is_parent(user):
+            return False
+        return bool(user.school_id)
 
 
 class HasModulePermission(BasePermission):
@@ -33,6 +59,8 @@ class HasModulePermission(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         if not user or not user.is_authenticated:
+            return False
+        if _is_parent(user):
             return False
         if is_owner(user):
             return True

@@ -8,8 +8,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .module_api import ModuleProtectedAPIView
-from schools.models import FeePayment, StudentFee
-from schools.serializers import FeePaymentSerializer
+from schools.models import StudentFee
+from schools.permissions import IsSchoolStaff
+
+from .parent_intent_service import ParentPaymentError, capture_parent_payment_intent, create_parent_payment_intent_for_fee
 
 from .models import (
     FeeCollectionCheckoutSession,
@@ -161,7 +163,7 @@ class PlatformVerifyPaymentView(ModuleProtectedAPIView):
 
 
 class ParentCreateIntentView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def post(self, request):
         school = request.user.school
@@ -184,57 +186,22 @@ class ParentCreateIntentView(APIView):
         if amount <= 0:
             return Response({"error": "Amount must be greater than zero."}, status=400)
 
-        cfg, _ = SchoolPaymentConfig.objects.get_or_create(school=school)
-        transfers = None
-        if cfg.razorpay_route_account_id:
-            # Route transfers settle money to the school's linked account.
-            transfers = [
-                {
-                    "account": cfg.razorpay_route_account_id,
-                    "amount": int((amount * 100).quantize(Decimal("1"))),
-                    "currency": "INR",
-                    "notes": {"school_id": str(school.id), "student_fee_id": str(student_fee.id)},
-                }
-            ]
+        try:
+            result = create_parent_payment_intent_for_fee(
+                school=school,
+                student_fee=student_fee,
+                created_by=request.user,
+                notes=request.data.get("notes", ""),
+                amount_override=amount,
+            )
+        except ParentPaymentError as exc:
+            return Response({"error": exc.message}, status=exc.status_code)
 
-        intent = ParentPaymentIntent.objects.create(
-            school=school,
-            student=student_fee.student,
-            student_fee=student_fee,
-            amount=amount,
-            status="pending",
-            created_by=request.user,
-            notes=request.data.get("notes", ""),
-            metadata={"mode": "razorpay", "route_account_configured": bool(cfg.razorpay_route_account_id)},
-        )
-        order = create_order(
-            amount=amount,
-            receipt=f"parent_{intent.id}",
-            notes={"intent_id": str(intent.id), "school_id": str(school.id), "type": "parent"},
-            transfers=transfers,
-        )
-        intent.provider_order_id = order.get("id", "")
-        intent.save()
-        ParentPaymentTransaction.objects.create(
-            intent=intent,
-            amount=amount,
-            currency="INR",
-            status="created",
-            raw_payload=order,
-        )
-        return Response(
-            {
-                "intent": ParentPaymentIntentSerializer(intent).data,
-                "order_id": order.get("id"),
-                "amount_paise": order.get("amount"),
-                "currency": order.get("currency", "INR"),
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(result, status=status.HTTP_201_CREATED)
 
 
 class ParentVerifyPaymentView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def post(self, request):
         school = request.user.school
@@ -246,59 +213,27 @@ class ParentVerifyPaymentView(APIView):
         payment_id = request.data.get("razorpay_payment_id", "")
         signature = request.data.get("razorpay_signature", "")
         payment_mode = request.data.get("payment_mode", "Online")
-        if not intent_id or not order_id or not payment_id or not signature:
-            return Response({"error": "Missing verification fields."}, status=400)
-
-        if not verify_signature(order_id, payment_id, signature):
-            return Response({"error": "Invalid payment signature."}, status=400)
+        if not intent_id:
+            return Response({"error": "intent_id is required."}, status=400)
 
         intent = ParentPaymentIntent.objects.filter(id=intent_id, school=school).select_related("student_fee").first()
         if not intent:
             return Response({"error": "Intent not found."}, status=404)
 
-        intent.status = "paid"
-        intent.paid_at = timezone.now()
-        intent.save()
-
-        tx = intent.transactions.order_by("-created_at").first()
-        if tx:
-            tx.provider_payment_id = payment_id
-            tx.provider_signature = signature
-            tx.status = "captured"
-            tx.raw_payload = request.data
-            tx.save()
-        else:
-            ParentPaymentTransaction.objects.create(
+        try:
+            result = capture_parent_payment_intent(
+                school=school,
                 intent=intent,
-                provider_payment_id=payment_id,
-                provider_signature=signature,
-                amount=intent.amount,
-                currency=intent.currency,
-                status="captured",
-                raw_payload=request.data,
-            )
-
-        created_fee_payment = None
-        if intent.student_fee:
-            created_fee_payment = FeePayment.objects.create(
-                student_fee=intent.student_fee,
-                amount=intent.amount,
-                payment_date=timezone.now().date(),
+                order_id=order_id,
+                payment_id=payment_id,
+                signature=signature,
                 payment_mode=payment_mode,
-                transaction_id=payment_id,
-                notes=(intent.notes or "Online parent payment via Razorpay"),
                 created_by=request.user,
             )
-            created_fee_payment.receipt_number = f"RCP-{school.id}-{created_fee_payment.id:06d}"
-            created_fee_payment.save()
+        except ParentPaymentError as exc:
+            return Response({"error": exc.message}, status=exc.status_code)
 
-        return Response(
-            {
-                "message": "Parent payment captured.",
-                "intent_id": intent.id,
-                "fee_payment": FeePaymentSerializer(created_fee_payment).data if created_fee_payment else None,
-            }
-        )
+        return Response(result)
 
 
 class FeeCollectionCreateOrderView(ModuleProtectedAPIView):

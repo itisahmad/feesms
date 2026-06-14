@@ -42,6 +42,10 @@ class SchoolViewSet(viewsets.ModelViewSet):
     serializer_class = SchoolSerializer
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     module_key = "settings"
+    action_module_map = {
+        "verify_parent_phone_send": "students",
+        "verify_parent_phone_confirm": "students",
+    }
 
     def get_queryset(self):
         if self.request.user.school:
@@ -66,6 +70,33 @@ class SchoolViewSet(viewsets.ModelViewSet):
             'max_students': school.max_students,
             'max_staff_logins': school.max_staff_logins,
         })
+
+    @action(detail=False, methods=['post'], url_path='verify-parent-phone/send')
+    def verify_parent_phone_send(self, request):
+        school = request.user.school
+        if not school:
+            return Response({'error': 'No school associated with this account.'}, status=status.HTTP_400_BAD_REQUEST)
+        phone = request.data.get('phone', '')
+        from ..phone_otp import PhoneOTPError, send_enrollment_otp
+        try:
+            result = send_enrollment_otp(school, phone)
+            return Response(result)
+        except PhoneOTPError as exc:
+            return Response({'error': exc.message}, status=exc.status_code)
+
+    @action(detail=False, methods=['post'], url_path='verify-parent-phone/confirm')
+    def verify_parent_phone_confirm(self, request):
+        school = request.user.school
+        if not school:
+            return Response({'error': 'No school associated with this account.'}, status=status.HTTP_400_BAD_REQUEST)
+        phone = request.data.get('phone', '')
+        otp = request.data.get('otp', '')
+        from ..phone_otp import PhoneOTPError, confirm_enrollment_otp
+        try:
+            result = confirm_enrollment_otp(school, phone, otp)
+            return Response(result)
+        except PhoneOTPError as exc:
+            return Response({'error': exc.message}, status=exc.status_code)
 
 
 class SchoolClassViewSet(SchoolScopedMixin, viewsets.ModelViewSet):

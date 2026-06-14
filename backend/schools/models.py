@@ -20,6 +20,7 @@ class User(AbstractUser):
         ('owner', 'Owner'),
         ('accountant', 'Accountant'),
         ('staff', 'Staff'),
+        ('parent', 'Parent'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='owner')
     phone = models.CharField(max_length=20, blank=True)
@@ -30,6 +31,15 @@ class User(AbstractUser):
         help_text="Per-module access for staff: view, create, edit, delete, actions.",
     )
 
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                fields=['school', 'phone'],
+                condition=models.Q(role='parent'),
+                name='uniq_parent_school_phone',
+            ),
+        ]
+
 
 class School(models.Model):
     """School/Institution"""
@@ -39,6 +49,12 @@ class School(models.Model):
         ('premium', 'Premium - ₹999/month'),
     ]
     name = models.CharField(max_length=200)
+    public_code = models.CharField(
+        max_length=32,
+        unique=True,
+        blank=True,
+        help_text="Code parents use at login together with mobile number.",
+    )
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, default='Muzaffarpur')
     state = models.CharField(max_length=50, default='Bihar')
@@ -75,6 +91,12 @@ class School(models.Model):
         self.max_students = limits["max_students"]
         self.max_staff_logins = limits["max_staff_logins"]
         self.save(update_fields=["plan", "max_students", "max_staff_logins"])
+
+    def save(self, *args, **kwargs):
+        if not self.public_code:
+            from .public_code import ensure_school_public_code
+            ensure_school_public_code(self, save=False)
+        super().save(*args, **kwargs)
 
     @property
     def academic_year_start(self) -> int:
@@ -158,6 +180,7 @@ class Student(models.Model):
     section_legacy = models.CharField(max_length=10, blank=True)  # Deprecated - use section FK
     parent_name = models.CharField(max_length=200)
     parent_phone = models.CharField(max_length=20)
+    parent_phone_verified_at = models.DateTimeField(null=True, blank=True)
     parent_email = models.EmailField(blank=True)
     admission_number = models.CharField(max_length=50, blank=True)
     roll_number = models.CharField(max_length=50, blank=True)
@@ -646,4 +669,31 @@ class FeeAutomatedReminderLog(models.Model):
         ordering = ["-run_date", "school_id"]
         constraints = [
             models.UniqueConstraint(fields=["school", "run_date"], name="uniq_fee_auto_reminder_school_date"),
+        ]
+
+
+class PhoneOTP(models.Model):
+    PURPOSE_ENROLL = "enroll_student"
+    PURPOSE_PARENT_REGISTER = "parent_register"
+    PURPOSE_PARENT_RESET = "parent_reset_password"
+
+    PURPOSE_CHOICES = [
+        (PURPOSE_ENROLL, "Student enrollment"),
+        (PURPOSE_PARENT_REGISTER, "Parent registration"),
+        (PURPOSE_PARENT_RESET, "Parent password reset"),
+    ]
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="phone_otps")
+    phone = models.CharField(max_length=20)
+    purpose = models.CharField(max_length=32, choices=PURPOSE_CHOICES, default=PURPOSE_ENROLL)
+    code_hash = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verify_attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["school", "phone", "purpose", "-created_at"]),
         ]

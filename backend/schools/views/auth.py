@@ -74,7 +74,7 @@ class StaffUserViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         school = self.get_user_school()
         if not school:
             return User.objects.none()
-        return User.objects.filter(school=school).exclude(role='owner').order_by('username')
+        return User.objects.filter(school=school).exclude(role__in=['owner', 'parent']).order_by('username')
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -91,7 +91,7 @@ class StaffUserViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         if owner.role != 'owner' or not school:
             raise ValidationError('Only school owner can create staff logins.')
 
-        current_staff = User.objects.filter(school=school).exclude(role='owner').count()
+        current_staff = User.objects.filter(school=school).exclude(role__in=['owner', 'parent']).count()
         if current_staff >= school.max_staff_logins:
             raise ValidationError(f'Max staff logins reached ({school.max_staff_logins}). Upgrade plan to add more.')
 

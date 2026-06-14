@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Users, Plus, Search, Info } from 'lucide-react';
+import { Users, Plus, Search, Info, ShieldCheck } from 'lucide-react';
 import { getStudents, createStudent, updateStudent, getClasses, getFeeStructures, getStudentFeeHistory, getSchool } from '@/lib/api';
+import { ParentPhoneVerifyModal } from '@/components/dashboard/parent-phone-verify-modal';
 import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
@@ -52,6 +53,16 @@ interface Student {
 
 const getTodayDate = () => new Date().toISOString().slice(0, 10);
 
+const normalizeParentPhone = (raw: string) => {
+  const phoneDigits = raw.replace(/\D/g, '');
+  return phoneDigits.startsWith('91') && phoneDigits.length === 12 ? phoneDigits.slice(2) : phoneDigits;
+};
+
+const isValidParentPhone = (raw: string) => {
+  const normalized = normalizeParentPhone(raw);
+  return normalized.length === 10 && /^[6-9]\d{9}$/.test(normalized);
+};
+
 const getDefaultChargesEffectiveFrom = (admissionDate: string, feeStartDay: number) => {
   if (!admissionDate) return '';
   const d = new Date(admissionDate);
@@ -97,6 +108,17 @@ export default function StudentsPage() {
   const [error, setError] = useState('');
   const [feeStartDay, setFeeStartDay] = useState(1);
   const [chargesHelpOpen, setChargesHelpOpen] = useState(false);
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
+  const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
+  const [originalParentPhone, setOriginalParentPhone] = useState('');
+
+  const normalizedFormPhone = normalizeParentPhone(form.parent_phone);
+  const parentPhoneUnchanged = Boolean(
+    editingId && originalParentPhone && normalizedFormPhone === normalizeParentPhone(originalParentPhone),
+  );
+  const isParentPhoneVerified = verifiedPhone === normalizedFormPhone && isValidParentPhone(form.parent_phone);
+  const canSaveWithoutVerify = parentPhoneUnchanged;
+  const parentPhoneReady = canSaveWithoutVerify || isParentPhoneVerified;
 
   const selectedClass = classes.find((c) => c.id === parseInt(form.school_class || '0'));
   const sectionsForClass = selectedClass?.sections || [];
@@ -212,6 +234,9 @@ export default function StudentsPage() {
         admission_number: s.admission_number || '',
         roll_number: s.roll_number || '',
       });
+      const existingPhone = s.parent_phone || '';
+      setOriginalParentPhone(existingPhone);
+      setVerifiedPhone(existingPhone ? normalizeParentPhone(existingPhone) : null);
       if (s.school_class) {
         getFeeStructures(s.school_class)
           .then(({ data: fsData }) => setFeeStructures(fsData.results || fsData))
@@ -228,6 +253,9 @@ export default function StudentsPage() {
     setShowForm(false);
     setForm(getInitialStudentForm());
     setChargesHelpOpen(false);
+    setVerifyModalOpen(false);
+    setVerifiedPhone(null);
+    setOriginalParentPhone('');
     setError('');
   };
 
@@ -246,12 +274,13 @@ export default function StudentsPage() {
       setError('Please select at least one fee type');
       return;
     }
-    const phoneDigits = form.parent_phone.replace(/\D/g, '');
-    const normalizedPhone = phoneDigits.startsWith('91') && phoneDigits.length === 12
-      ? phoneDigits.slice(2)
-      : phoneDigits;
-    if (normalizedPhone.length !== 10 || !/^[6-9]\d{9}$/.test(normalizedPhone)) {
+    const normalizedPhone = normalizeParentPhone(form.parent_phone);
+    if (!isValidParentPhone(form.parent_phone)) {
       setError('Enter a valid 10-digit parent phone number');
+      return;
+    }
+    if (!parentPhoneReady) {
+      setError('Verify parent phone with OTP before saving.');
       return;
     }
     setError('');
@@ -281,6 +310,9 @@ export default function StudentsPage() {
       setShowForm(false);
       setEditingId(null);
       setChargesHelpOpen(false);
+      setVerifyModalOpen(false);
+      setVerifiedPhone(null);
+      setOriginalParentPhone('');
       loadStudents();
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: Record<string, string[]> } };
@@ -333,6 +365,8 @@ export default function StudentsPage() {
               else {
                 setEditingId(null);
                 setForm(getInitialStudentForm());
+                setVerifiedPhone(null);
+                setOriginalParentPhone('');
                 setShowForm(true);
               }
             }}
@@ -515,17 +549,48 @@ export default function StudentsPage() {
             </div>
             <div>
               <label className={dash.label}>Parent phone *</label>
-              <input
-                value={form.parent_phone}
-                onChange={(e) => setForm((f) => ({ ...f, parent_phone: e.target.value }))}
-                className={dash.field}
-                placeholder="10-digit mobile"
-                inputMode="numeric"
-                maxLength={13}
-                pattern="[0-9+ ]*"
-                required
-              />
-              <p className="mt-1 text-xs text-slate-500">Enter a 10-digit mobile number, optionally with 91 prefix.</p>
+              <div className="flex gap-2">
+                <input
+                  value={form.parent_phone}
+                  onChange={(e) => {
+                    const nextPhone = e.target.value;
+                    setForm((f) => ({ ...f, parent_phone: nextPhone }));
+                    const nextNormalized = normalizeParentPhone(nextPhone);
+                    if (verifiedPhone && nextNormalized !== verifiedPhone) {
+                      setVerifiedPhone(null);
+                    }
+                  }}
+                  className={dash.field}
+                  placeholder="10-digit mobile"
+                  inputMode="numeric"
+                  maxLength={13}
+                  pattern="[0-9+ ]*"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!isValidParentPhone(form.parent_phone) || isParentPhoneVerified || parentPhoneUnchanged}
+                  onClick={() => setVerifyModalOpen(true)}
+                  className="shrink-0 rounded-xl border-white/15 bg-white/5"
+                >
+                  {isParentPhoneVerified || parentPhoneUnchanged ? (
+                    <>
+                      <ShieldCheck className="mr-1.5 h-4 w-4 text-teal-400" />
+                      Verified
+                    </>
+                  ) : (
+                    'Verify'
+                  )}
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {parentPhoneUnchanged
+                  ? 'Phone unchanged — no new verification needed.'
+                  : isParentPhoneVerified
+                    ? 'Phone verified. You can save the student.'
+                    : 'Verify this number with OTP before saving.'}
+              </p>
             </div>
             <div>
               <label className={dash.label}>Parent email</label>
@@ -560,13 +625,23 @@ export default function StudentsPage() {
             <div className="md:col-span-2">
               <Button
                 type="submit"
-                disabled={saving || classes.length === 0}
+                disabled={saving || classes.length === 0 || !parentPhoneReady}
                 className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0"
               >
                 {saving ? 'Saving…' : (editingId ? 'Update Student' : 'Add Student')}
               </Button>
             </div>
           </form>
+          {verifyModalOpen && isValidParentPhone(form.parent_phone) && (
+            <ParentPhoneVerifyModal
+              phone={normalizedFormPhone}
+              onClose={() => setVerifyModalOpen(false)}
+              onVerified={(phone) => {
+                setVerifiedPhone(phone);
+                setVerifyModalOpen(false);
+              }}
+            />
+          )}
         </GlassCard>
       )}
 

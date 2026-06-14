@@ -69,8 +69,12 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!loading && !user) {
       window.location.href = '/login';
+      return;
     }
-  }, [user, loading]);
+    if (!loading && user?.role === 'parent') {
+      router.replace('/parent');
+    }
+  }, [user, loading, router]);
 
   const isOwner = user?.role === 'owner' || user?.is_owner;
   const allowedModules = user?.allowed_modules ?? [];

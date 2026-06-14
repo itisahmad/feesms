@@ -20,6 +20,9 @@ class ModuleProtectedAPIView(APIView):
     module_key: str | None = None
 
     def dispatch(self, request, *args, **kwargs):
+        if request.user and request.user.is_authenticated and getattr(request.user, "role", None) == "parent":
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Staff access only.")
         if self.module_key and request.user and request.user.is_authenticated:
             assert_module_permission(request.user, self.module_key, permission_for_http_method(request.method))
         return super().dispatch(request, *args, **kwargs)

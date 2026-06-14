@@ -30,7 +30,8 @@ api.interceptors.response.use(
         } catch (_) {
           localStorage.removeItem('access');
           localStorage.removeItem('refresh');
-          window.location.href = '/login';
+          const path = typeof window !== 'undefined' ? window.location.pathname : '';
+          window.location.href = path.startsWith('/parent') ? '/parent/login' : '/login';
         }
       }
     }
@@ -58,6 +59,94 @@ export const login = (loginId: string, password: string) =>
 export const getMe = () => api.get('/auth/me/');
 export const forgotPassword = (username_or_email: string) =>
   api.post('/auth/forgot-password/', { username_or_email });
+
+export type ParentChild = {
+  id: number;
+  name: string;
+  class_name: string;
+  section_name: string | null;
+  admission_number: string;
+  roll_number: string;
+};
+
+export const parentSendOTP = (school_code: string, phone: string) =>
+  api.post<{ message: string; phone: string; expires_at: string; debug_otp_logged?: boolean }>(
+    '/parent/auth/send-otp/',
+    { school_code, phone },
+  );
+export const parentRegister = (data: {
+  school_code: string;
+  phone: string;
+  otp: string;
+  password: string;
+  password2: string;
+}) =>
+  api.post<{ message: string; role: string; access: string; refresh: string }>(
+    '/parent/auth/register/',
+    data,
+  );
+export const parentLogin = (school_code: string, phone: string, password: string) =>
+  api.post<{ access: string; refresh: string; role: string }>(
+    '/parent/auth/login/',
+    { school_code, phone, password },
+  );
+export const parentForgotPasswordSendOTP = (school_code: string, phone: string) =>
+  api.post<{ message: string; phone: string; expires_at: string; debug_otp_logged?: boolean }>(
+    '/parent/auth/forgot-password/send-otp/',
+    { school_code, phone },
+  );
+export const parentResetPassword = (data: {
+  school_code: string;
+  phone: string;
+  otp: string;
+  password: string;
+  password2: string;
+}) =>
+  api.post<{ message: string; role: string; access: string; refresh: string }>(
+    '/parent/auth/forgot-password/reset/',
+    data,
+  );
+export const getParentChildren = () => api.get<ParentChild[]>('/parent/children/');
+export const getParentChildProfile = (studentId: number) => api.get(`/parent/children/${studentId}/`);
+export const getParentStudentExamReport = (studentId: number, examId: number) =>
+  api.get<StudentExamReportResponse>(`/parent/children/${studentId}/exam-report/`, {
+    params: { exam_id: examId },
+  });
+export const getParentChildReceipts = (studentId: number) =>
+  api.get<Array<{
+    student_fee_id: number;
+    fee_type: string;
+    month: number;
+    year: number;
+    total: number;
+    paid: number;
+    balance: number;
+  }>>(`/parent/children/${studentId}/receipts/`);
+export const getParentChildReceipt = (studentId: number, studentFeeId: number) =>
+  api.get(`/parent/children/${studentId}/receipts/${studentFeeId}/`, { responseType: 'blob' });
+
+export const getParentChildMonthReceipt = (studentId: number, month: number, year: number) =>
+  api.get(`/parent/children/${studentId}/receipts/monthly/`, {
+    params: { month, year },
+    responseType: 'blob',
+  });
+export const createParentChildPayment = (studentId: number, student_fee_id: number) =>
+  api.post<{
+    intent: { id: number };
+    order_id: string;
+    amount_paise: number;
+    amount: string;
+  }>(`/parent/children/${studentId}/pay/`, { student_fee_id });
+export const verifyParentChildPayment = (
+  studentId: number,
+  data: {
+    intent_id: number;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    payment_mode?: string;
+  },
+) => api.post(`/parent/children/${studentId}/pay/verify/`, data);
 export const resetPassword = (data: { uid: string; token: string; password: string; password2: string }) =>
   api.post('/auth/reset-password/', data);
 
@@ -87,6 +176,7 @@ export const deleteStaffUser = (id: number) => api.delete(`/staff-users/${id}/`)
 export type SchoolRecord = {
   id: number;
   name: string;
+  public_code?: string;
   address: string;
   city: string;
   state: string;
@@ -108,6 +198,16 @@ export const updateSchool = (id: number, data: FormData | Record<string, unknown
   api.patch<SchoolRecord>(`/schools/${id}/`, data);
 export const upgradeSchoolPlan = (id: number, plan: 'basic' | 'standard' | 'premium') =>
   api.post(`/schools/${id}/upgrade_plan/`, { plan });
+export const sendVerifyParentPhone = (phone: string) =>
+  api.post<{ message: string; phone: string; expires_at: string; debug_otp_logged?: boolean }>(
+    '/schools/verify-parent-phone/send/',
+    { phone },
+  );
+export const confirmVerifyParentPhone = (phone: string, otp: string) =>
+  api.post<{ message: string; phone: string; verified_at: string }>(
+    '/schools/verify-parent-phone/confirm/',
+    { phone, otp },
+  );
 
 // Classes
 export const getClasses = () => api.get('/classes/');
@@ -291,8 +391,12 @@ export const bookSlot = (data: { date: string; time: string }) => api.post('/boo
 
 // Payments module
 export const getPaymentConfig = () => api.get('/payments/config/');
-export const updatePaymentConfig = (data: { platform_billing_cycle?: 'monthly' | 'yearly'; razorpay_route_account_id?: string; active?: boolean }) =>
-  api.patch('/payments/config/', data);
+export const updatePaymentConfig = (data: {
+  platform_billing_cycle?: 'monthly' | 'yearly';
+  razorpay_route_account_id?: string;
+  active?: boolean;
+  allow_parent_online_payment?: boolean;
+}) => api.patch('/payments/config/', data);
 export const getPlatformBillingSummary = () => api.get('/payments/platform/summary/');
 export const createPlatformOrder = (billing_cycle: 'monthly' | 'yearly') =>
   api.post('/payments/platform/create-order/', { billing_cycle });

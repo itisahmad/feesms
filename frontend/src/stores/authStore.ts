@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { getMe, login as apiLogin } from '@/lib/api';
+import { getMe, login as apiLogin, parentLogin as apiParentLogin, parentRegister as apiParentRegister, parentResetPassword as apiParentResetPassword } from '@/lib/api';
 import type { ModulePermissions } from '@/lib/staff-modules';
 
 export interface AuthUser {
@@ -27,6 +27,21 @@ export interface AuthState {
   refreshUser: () => Promise<AuthUser | null>;
   initializeAuth: () => Promise<void>;
   login: (loginId: string, password: string) => Promise<void>;
+  parentLogin: (schoolCode: string, phone: string, password: string) => Promise<void>;
+  parentRegister: (data: {
+    school_code: string;
+    phone: string;
+    otp: string;
+    password: string;
+    password2: string;
+  }) => Promise<void>;
+  parentResetPassword: (data: {
+    school_code: string;
+    phone: string;
+    otp: string;
+    password: string;
+    password2: string;
+  }) => Promise<void>;
   logout: () => void;
 }
 
@@ -77,6 +92,36 @@ export const useAuthStore = create<AuthState>((set: (partial: Partial<AuthState>
 
   login: async (loginId: string, password: string) => {
     const { data } = await apiLogin(loginId, password);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('access', data.access);
+      localStorage.setItem('refresh', data.refresh);
+    }
+    const { data: userData } = await getMe();
+    set({ user: userData });
+  },
+
+  parentLogin: async (schoolCode: string, phone: string, password: string) => {
+    const { data } = await apiParentLogin(schoolCode.trim(), phone, password);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('access', data.access);
+      localStorage.setItem('refresh', data.refresh);
+    }
+    const { data: userData } = await getMe();
+    set({ user: userData });
+  },
+
+  parentRegister: async (payload) => {
+    const { data } = await apiParentRegister(payload);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('access', data.access);
+      localStorage.setItem('refresh', data.refresh);
+    }
+    const { data: userData } = await getMe();
+    set({ user: userData });
+  },
+
+  parentResetPassword: async (payload) => {
+    const { data } = await apiParentResetPassword(payload);
     if (typeof window !== 'undefined') {
       localStorage.setItem('access', data.access);
       localStorage.setItem('refresh', data.refresh);

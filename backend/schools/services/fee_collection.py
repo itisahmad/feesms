@@ -5,6 +5,9 @@ import calendar
 from datetime import date
 from decimal import Decimal
 
+from django.utils import timezone
+
+from payments.models import SchoolPaymentConfig
 from schools.fee_periods import is_struct_billable_for_period
 from schools.late_fine import unpaid_balance
 from schools.models import Student, StudentFee, StudentFeeStructureChoice
@@ -42,6 +45,20 @@ def _choice_maps(student_ids: list[int]) -> tuple[dict, dict]:
         choice_ids_map.setdefault(choice.student_id, []).append(choice.fee_structure_id)
         choice_map[(choice.student_id, choice.fee_structure_id)] = choice
     return choice_ids_map, choice_map
+
+
+def _month_sort_key(year: int, month: int) -> int:
+    return year * 12 + month
+
+
+def _is_month_current_or_past(year: int, month: int, current_year: int, current_month: int) -> bool:
+    return _month_sort_key(year, month) <= _month_sort_key(current_year, current_month)
+
+
+def _is_month_visible(year: int, month: int, total_paid: float, current_year: int, current_month: int) -> bool:
+    if _is_month_current_or_past(year, month, current_year, current_month):
+        return True
+    return total_paid > 0
 
 
 def _should_include_fee(sf: StudentFee, choice_ids_map, choice_map, month=None, year=None) -> bool:
@@ -265,16 +282,22 @@ def build_student_fee_history(student: Student) -> dict:
     if student.school_class_id:
         student = Student.objects.select_related('school_class').get(pk=student.pk)
 
+    now = timezone.now()
+    current_month, current_year = now.month, now.year
+
     student_fees = (
         StudentFee.objects.filter(student=student)
-        .select_related("fee_structure", "fee_structure__fee_type")
+        .select_related("fee_structure", "fee_structure__fee_type", "student")
         .prefetch_related("payments")
         .order_by("-year", "-month")
     )
+    choice_ids_map, choice_map = _choice_maps([student.id])
     yearly_groups: dict = {}
     by_month: dict = {}
 
     for sf in student_fees:
+        if not _should_include_fee(sf, choice_ids_map, choice_map):
+            continue
         key = (sf.year, sf.month)
         if key not in by_month:
             by_month[key] = {"year": sf.year, "month": sf.month, "fees": [], "total_due": 0, "total_paid": 0}
@@ -301,16 +324,45 @@ def build_student_fee_history(student: Student) -> dict:
                 )["total"] += float(payment.amount)
         paid = sum(float(p.amount) for p in sf.payments.all())
         total = float(sf.total_amount)
+        balance = total - paid
+        month_is_current_or_past = _is_month_current_or_past(sf.year, sf.month, current_year, current_month)
         by_month[key]["fees"].append({
             "id": sf.id,
             "fee_type": sf.fee_structure.fee_type.name,
+            "amount": float(sf.amount),
+            "late_fine": float(sf.late_fine),
             "total": total,
             "paid": paid,
-            "balance": total - paid,
+            "balance": balance,
+            "status": _fee_status(total, paid),
+            "is_payable": balance > 0 and month_is_current_or_past,
+            "can_download_receipt": paid > 0 and month_is_current_or_past,
             "payments": payments_list,
         })
         by_month[key]["total_due"] += total
         by_month[key]["total_paid"] += paid
+
+    visible_months = []
+    for month_data in by_month.values():
+        if not _is_month_visible(
+            month_data["year"],
+            month_data["month"],
+            month_data["total_paid"],
+            current_year,
+            current_month,
+        ):
+            continue
+        year, month = month_data["year"], month_data["month"]
+        is_current = year == current_year and month == current_month
+        is_future = _month_sort_key(year, month) > _month_sort_key(current_year, current_month)
+        month_data["is_current"] = is_current
+        month_data["is_future"] = is_future
+        month_data["is_past"] = not is_current and not is_future
+        month_data["can_pay"] = any(f["is_payable"] for f in month_data["fees"])
+        month_data["can_download_month_receipt"] = (
+            month_data["total_paid"] > 0 and not is_future
+        )
+        visible_months.append(month_data)
 
     yearly_payments = [
         {
@@ -333,6 +385,7 @@ def build_student_fee_history(student: Student) -> dict:
     ]
 
     school_class = student.school_class if student.school_class_id else None
+    payment_cfg, _ = SchoolPaymentConfig.objects.get_or_create(school=student.school)
     return {
         "student": {
             "id": student.id,
@@ -351,8 +404,11 @@ def build_student_fee_history(student: Student) -> dict:
             "roll_number": student.roll_number or "",
         },
         "admission_date": str(student.admission_date) if student.admission_date else None,
-        "months_with_fees": len(by_month),
+        "months_with_fees": len(visible_months),
+        "current_month": current_month,
+        "current_year": current_year,
         "fee_choices": fee_choices,
         "yearly_payments": yearly_payments,
-        "monthly_history": sorted(by_month.values(), key=lambda item: (-item["year"], -item["month"])),
+        "monthly_history": sorted(visible_months, key=lambda item: (-item["year"], -item["month"])),
+        "allow_parent_online_payment": payment_cfg.allow_parent_online_payment,
     }

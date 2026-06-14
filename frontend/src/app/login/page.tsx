@@ -16,7 +16,7 @@ export default function LoginPage() {
   const { login, user } = useAuth();
 
   if (user) {
-    window.location.href = '/dashboard';
+    window.location.href = user.role === 'parent' ? '/parent' : '/dashboard';
     return null;
   }
 
@@ -100,6 +100,12 @@ export default function LoginPage() {
             Don&apos;t have an account?{' '}
             <Link href="/register" className="font-medium text-teal-600 hover:underline">
               Register your school
+            </Link>
+          </p>
+          <p className="mt-3 text-center text-sm text-gray-600">
+            Parent?{' '}
+            <Link href="/parent/login" className="font-medium text-teal-600 hover:underline">
+              Sign in to parent portal
             </Link>
           </p>
         </div>

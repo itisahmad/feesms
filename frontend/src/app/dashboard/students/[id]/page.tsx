@@ -1,41 +1,37 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { motion } from 'framer-motion';
-import {
-  ArrowLeft,
-  CalendarDays,
-  ChevronRight,
-  ClipboardCheck,
-  Hash,
-  IdCard,
-  IndianRupee,
-  Layers,
-  MessageCircle,
-  Receipt,
-  UserCircle,
-} from 'lucide-react';
+import { ArrowLeft, UserCircle } from 'lucide-react';
 import {
   getStudentFeeHistory,
   getFeeStructures,
   getStudentPublishedResults,
   updateStudent,
-  type StudentPublishedResultSummary,
 } from '@/lib/api';
+import { ParentPayFeesModal } from '@/components/parent/parent-pay-fees-modal';
 import { StudentResultReportModal } from '@/components/dashboard/student-result-report-modal';
 import { usePermissions } from '@/hooks/use-permissions';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { InlineLoading, PageLoading } from '@/components/dashboard/loading-state';
 import { DashboardModal } from '@/components/dashboard/modal';
-import { ReceiptPrintModal } from '@/components/dashboard/receipt-print-modal';
 import { Button } from '@/components/ui/button';
 import { dash } from '@/lib/dashboard-ui';
 import { cn } from '@/lib/utils';
-
-const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+import {
+  StudentProfileHeader,
+  StudentProfileOverview,
+  StudentFeesSection,
+  StudentPaymentsSection,
+  StudentResultsSection,
+  computeFeeSummary,
+  downloadStudentMonthReceipt,
+  MONTHS,
+  type StudentFeeHistoryData,
+  type StudentPublishedResultSummary,
+} from '@/components/student-profile';
 
 interface FeeStructureItem {
   id: number;
@@ -43,61 +39,45 @@ interface FeeStructureItem {
   amount: string;
 }
 
-const formatExamDate = (value: string | null) => {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-};
-
 export default function StudentDetailPage() {
   const params = useParams();
   const id = parseInt(params.id as string);
   const { canView } = usePermissions();
   const showResults = canView('results');
-  const [data, setData] = useState<{
-    student: {
-      id: number;
-      name: string;
-      class_name: string;
-      school_class: number | null;
-      section: number | null;
-      admission_date: string | null;
-      charges_effective_from?: string | null;
-      admission_number?: string;
-      roll_number?: string;
-      parent_phone: string;
-      class_whatsapp_group_name?: string;
-      class_whatsapp_group_link?: string;
-    };
-    admission_date: string | null;
-    months_with_fees: number;
-    fee_choices: { fee_structure_id: number; fee_type: string; amount: number; effective_from: string | null }[];
-    yearly_payments?: { fee_type: string; total: number; date: string; mode: string }[];
-    monthly_history: { year: number; month: number; fees: { id: number; fee_type: string; total: number; paid: number; balance: number; payments: { amount: number; date: string; mode: string; is_yearly?: boolean }[] }[]; total_due: number; total_paid: number }[];
-  } | null>(null);
+  const [data, setData] = useState<StudentFeeHistoryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingFees, setEditingFees] = useState(false);
   const [feeStructures, setFeeStructures] = useState<FeeStructureItem[]>([]);
   const [editChoices, setEditChoices] = useState<{ fee_structure_id: number; effective_from: string }[]>([]);
   const [savingFees, setSavingFees] = useState(false);
-  const [receiptPeriod, setReceiptPeriod] = useState<{ month: number; year: number } | null>(null);
   const [publishedResults, setPublishedResults] = useState<StudentPublishedResultSummary[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [selectedExam, setSelectedExam] = useState<{ id: number; name: string } | null>(null);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payModalMonth, setPayModalMonth] = useState<{ month: number; year: number } | null>(null);
 
-  useEffect(() => {
+  const loadProfile = useCallback(() => {
+    if (Number.isNaN(id)) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     getStudentFeeHistory(id)
-      .then(({ data }) => setData(data))
+      .then(({ data: res }) => setData(res))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  useEffect(() => {
     if (!showResults || !id || Number.isNaN(id)) return;
     setResultsLoading(true);
     getStudentPublishedResults(id)
-      .then(({ data }) => setPublishedResults(data.results || []))
+      .then(({ data: res }) => setPublishedResults(res.results || []))
       .catch(() => setPublishedResults([]))
       .finally(() => setResultsLoading(false));
   }, [id, showResults]);
@@ -122,9 +102,7 @@ export default function StudentDetailPage() {
   const toggleEditChoice = (fsId: number, effectiveFrom: string) => {
     setEditChoices((prev) => {
       const exists = prev.some((c) => c.fee_structure_id === fsId);
-      if (exists) {
-        return prev.filter((c) => c.fee_structure_id !== fsId);
-      }
+      if (exists) return prev.filter((c) => c.fee_structure_id !== fsId);
       return [...prev, { fee_structure_id: fsId, effective_from: effectiveFrom }];
     });
   };
@@ -155,9 +133,12 @@ export default function StudentDetailPage() {
     }
   };
 
-  if (loading) {
-    return <PageLoading />;
-  }
+  const scrollToPayments = () => {
+    document.getElementById('student-payments')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  if (loading) return <PageLoading />;
+
   if (!data) {
     return (
       <PageShell>
@@ -173,319 +154,108 @@ export default function StudentDetailPage() {
     );
   }
 
-  const { student, admission_date, months_with_fees, fee_choices, yearly_payments = [], monthly_history } = data;
-  const chargesEffectiveFrom = student?.charges_effective_from || null;
-  const totalPending = monthly_history.reduce((sum, m) => {
-    return sum + m.fees.reduce((s, f) => s + f.balance, 0);
-  }, 0);
+  const { student, admission_date, fee_choices, yearly_payments = [], monthly_history, allow_parent_online_payment = false } = data;
+  const feeSummary = computeFeeSummary(data);
 
-  const statBlocks = [
-    {
-      label: 'Admission date',
-      value: admission_date || 'Not set',
-      icon: CalendarDays,
-    },
-    {
-      label: 'Admission number',
-      value: student.admission_number || 'Auto-generated on save',
-      icon: IdCard,
-    },
-    {
-      label: 'Roll number',
-      value: student.roll_number || 'Auto-generated',
-      hint: 'Unique in this class and section',
-      icon: Hash,
-    },
-    {
-      label: 'Charges apply from',
-      value: chargesEffectiveFrom || admission_date || 'Not set',
-      hint: 'Monthly fees charged from this date',
-      icon: Layers,
-    },
-    {
-      label: 'Months with fees',
-      value: String(months_with_fees),
-      icon: CalendarDays,
-    },
-    {
-      label: 'Total pending',
-      value: `₹${totalPending.toLocaleString('en-IN')}`,
-      valueClass: totalPending > 0 ? 'text-amber-300' : 'text-teal-300',
-      icon: IndianRupee,
-    },
-  ];
+  const openPayModal = (month?: number, year?: number) => {
+    if (month != null && year != null) {
+      setPayModalMonth({ month, year });
+    } else {
+      setPayModalMonth(null);
+    }
+    setShowPayModal(true);
+  };
+
+  const handleDownloadMonthReceipt = async (month: number, year: number) => {
+    const safeName = student.name.replace(/\s+/g, '-').slice(0, 30);
+    await downloadStudentMonthReceipt(
+      id,
+      month,
+      year,
+      `receipt-${safeName}-${MONTHS[month]}-${year}.pdf`,
+    );
+  };
 
   return (
-    <PageShell>
-      <div className="space-y-6">
-        <div>
-          <Link
-            href="/dashboard/students"
-            className={cn(dash.link, 'mb-4 inline-flex items-center gap-1.5')}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to students
-          </Link>
-        </div>
+    <PageShell className="!space-y-4">
+      <div className="space-y-3">
+        <Link href="/dashboard/students" className={cn(dash.link, 'inline-flex items-center gap-1.5')}>
+          <ArrowLeft className="h-4 w-4" />
+          Back to students
+        </Link>
 
         <PageHeader
           icon={UserCircle}
           eyebrow="Student profile"
           title={student.name}
-          subtitle={`${student.class_name} · ${student.parent_phone}`}
+          subtitle={student.class_name}
         />
       </div>
 
-      <GlassCard delay={0.05}>
-        <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
-          {statBlocks.map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 + i * 0.04, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              className={cn(dash.innerPanel, 'flex gap-4')}
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-teal-500/20 bg-teal-500/10 text-teal-300">
-                <s.icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm text-slate-500">{s.label}</p>
-                <p className={cn('font-semibold text-white', 'valueClass' in s ? s.valueClass : undefined)}>
-                  {s.value}
-                </p>
-                {'hint' in s && s.hint ? (
-                  <p className="mt-1 text-xs text-slate-500">{s.hint}</p>
-                ) : null}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </GlassCard>
+      <StudentProfileHeader
+        student={student}
+        admissionDate={admission_date}
+        feeSummary={feeSummary}
+        publishedResults={publishedResults}
+        onViewFees={scrollToPayments}
+      />
 
-      {student.class_whatsapp_group_link ? (
-        <GlassCard delay={0.08}>
-          <div className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-300">
-                <MessageCircle className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white">
-                  {student.class_whatsapp_group_name || `${student.class_name} parents group`}
-                </p>
-                <p className="mt-1 text-sm text-slate-400">
-                  Parents can join the class WhatsApp group for announcements and updates.
-                </p>
-              </div>
-            </div>
-            <a
-              href={student.class_whatsapp_group_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(dash.link, 'shrink-0')}
-            >
-              Join WhatsApp group
-            </a>
-          </div>
-        </GlassCard>
+      <div className={cn('grid gap-4', showResults ? 'lg:grid-cols-2' : '')}>
+        <StudentFeesSection
+          feeChoices={fee_choices}
+          canEdit={!!student.school_class}
+          onEdit={() => setEditingFees(true)}
+        />
+        {showResults ? (
+          <StudentProfileOverview
+            studentId={id}
+            publishedResults={publishedResults}
+            resultsLoading={resultsLoading}
+            showResults={showResults}
+            onOpenExam={(examId, examName) => setSelectedExam({ id: examId, name: examName })}
+          />
+        ) : null}
+      </div>
+
+      {showResults ? (
+        <StudentResultsSection
+          results={publishedResults}
+          loading={resultsLoading}
+          onOpenExam={(examId, examName) => setSelectedExam({ id: examId, name: examName })}
+        />
       ) : null}
 
-      <GlassCard delay={0.1}>
-        <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className={dash.sectionTitle}>Fee types applied</h2>
-          {!editingFees ? (
-            student.school_class ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditingFees(true)}
-                className="rounded-xl border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
-              >
-                Edit (add/remove fee types, set start date)
-              </Button>
-            ) : null
-          ) : null}
-        </div>
-        <div className="p-6">
-          {!editingFees ? (
-            fee_choices.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No fee structure choices. Click Edit to add fee types (tuition, transport, library, exam,
-                etc.).
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                {fee_choices.map((fc, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.05 + i * 0.03 }}
-                    className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2"
-                  >
-                    <span className="font-medium text-slate-200">{fc.fee_type}</span>
-                    <span className="text-slate-400"> — ₹{fc.amount.toLocaleString('en-IN')}</span>
-                    {fc.effective_from && (
-                      <span className="ml-2 text-xs text-slate-500">(from {fc.effective_from})</span>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            )
-          ) : null}
-        </div>
-      </GlassCard>
+      <StudentPaymentsSection
+        id="student-payments"
+        monthlyHistory={monthly_history}
+        yearlyPayments={yearly_payments}
+        studentName={student.name}
+        allowParentOnlinePayment={allow_parent_online_payment}
+        onDownloadMonthReceipt={handleDownloadMonthReceipt}
+        onPayMonthOnline={(month, year) => openPayModal(month, year)}
+      />
 
-      {showResults && (
-        <GlassCard delay={0.11}>
-          <div className="border-b border-white/10 px-6 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={cn(dash.sectionTitle, 'flex items-center gap-2')}>
-                <ClipboardCheck className="h-5 w-5 text-teal-400" />
-                Exam results
-              </h2>
-              <Link href="/dashboard/results" className={cn(dash.link, 'text-xs')}>
-                Manage exams
-              </Link>
-            </div>
-          </div>
-          <div className="p-6">
-            {resultsLoading ? (
-              <InlineLoading message="Loading results…" />
-            ) : publishedResults.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No published results yet. Publish an exam from the Results module to show it here.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {publishedResults.map((exam) => (
-                  <button
-                    key={exam.exam_id}
-                    type="button"
-                    onClick={() => setSelectedExam({ id: exam.exam_id, name: exam.exam_name })}
-                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:border-teal-500/30 hover:bg-teal-500/5"
-                  >
-                    <div>
-                      <p className="font-medium text-slate-200">{exam.exam_name}</p>
-                      <p className="text-xs text-slate-500">
-                        {exam.class_name}
-                        {exam.exam_date ? ` · ${formatExamDate(exam.exam_date)}` : ''}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {exam.total_obtained != null && (
-                        <span className="text-sm text-slate-400">
-                          {exam.total_obtained}/{exam.total_max}
-                          {exam.percentage != null ? ` (${exam.percentage}%)` : ''}
-                        </span>
-                      )}
-                      {exam.overall_grade && (
-                        <span className={cn(dash.badge, dash.badgeTeal)}>Grade {exam.overall_grade}</span>
-                      )}
-                      <ChevronRight className="h-4 w-4 text-teal-400" />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </GlassCard>
-      )}
+      {showPayModal ? (
+        <ParentPayFeesModal
+          studentId={id}
+          studentName={student.name}
+          monthlyHistory={monthly_history}
+          filterMonth={payModalMonth?.month}
+          filterYear={payModalMonth?.year}
+          paymentChannel="staff"
+          onClose={() => {
+            setShowPayModal(false);
+            setPayModalMonth(null);
+          }}
+          onPaid={() => {
+            setShowPayModal(false);
+            setPayModalMonth(null);
+            loadProfile();
+          }}
+        />
+      ) : null}
 
-      <GlassCard delay={0.12}>
-        <div className="border-b border-white/10 px-6 py-4">
-          <h2 className={dash.sectionTitle}>Fee &amp; payment history</h2>
-        </div>
-        {yearly_payments.length > 0 && (
-          <div className="border-b border-white/10 bg-teal-500/10 px-6 py-5">
-            <h3 className="mb-3 font-medium text-slate-200">Yearly payments</h3>
-            <div className="space-y-2">
-              {yearly_payments.map((yp, i) => (
-                <div key={i} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span className="font-medium text-slate-300">{yp.fee_type} – Yearly payment</span>
-                  <span className="font-semibold text-teal-300">
-                    ₹{yp.total.toLocaleString('en-IN')} on {yp.date} ({yp.mode})
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {monthly_history.length === 0 ? (
-          <div className={dash.empty}>No fee records yet. Generate fees from Fee Collection.</div>
-        ) : (
-          <div className="divide-y divide-white/5">
-            {monthly_history.map((m, mi) => (
-              <motion.div
-                key={`${m.year}-${m.month}`}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.06 + mi * 0.03 }}
-                className="p-6"
-              >
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-medium text-slate-200">
-                    {MONTHS[m.month]} {m.year}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-sm text-slate-400">
-                      Due: ₹{m.total_due.toLocaleString('en-IN')} · Paid: ₹
-                      {m.total_paid.toLocaleString('en-IN')}
-                    </span>
-                    {m.total_paid > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setReceiptPeriod({ month: m.month, year: m.year })}
-                        className={cn(dash.link, 'inline-flex items-center gap-1 text-sm')}
-                      >
-                        <Receipt className="h-3.5 w-3.5" />
-                        Monthly receipt
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {m.fees.map((f) => (
-                    <div
-                      key={f.id}
-                      className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 py-2 last:border-0"
-                    >
-                      <div>
-                        <span className="font-medium text-slate-200">{f.fee_type}</span>
-                        <span className="ml-2 text-sm text-slate-500">
-                          ₹{f.paid.toLocaleString('en-IN')}/{f.total.toLocaleString('en-IN')}
-                        </span>
-                        {f.balance > 0 && (
-                          <span className="ml-2 text-sm text-amber-400">
-                            ₹{f.balance.toLocaleString('en-IN')} pending
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {m.fees.some((f) => f.payments.length > 0) && (
-                  <div className="mt-3 rounded-xl border border-teal-500/20 bg-teal-500/10 px-4 py-3 text-sm font-medium text-teal-200">
-                    {(() => {
-                      const allPayments = m.fees.flatMap((f) => f.payments);
-                      const yearly = allPayments.filter((p) => p.is_yearly);
-                      const other = allPayments.filter((p) => !p.is_yearly);
-                      const parts: string[] = [];
-                      if (yearly.length > 0) parts.push('Yearly payment (see above)');
-                      if (other.length > 0)
-                        parts.push(other.map((p) => `₹${p.amount} on ${p.date} (${p.mode})`).join(', '));
-                      return <>Payments: {parts.join(' · ')}</>;
-                    })()}
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </GlassCard>
-
-      {selectedExam && (
+      {selectedExam ? (
         <StudentResultReportModal
           examId={selectedExam.id}
           examName={selectedExam.name}
@@ -493,20 +263,9 @@ export default function StudentDetailPage() {
           studentName={student.name}
           onClose={() => setSelectedExam(null)}
         />
-      )}
+      ) : null}
 
-      {receiptPeriod && (
-        <ReceiptPrintModal
-          studentId={id}
-          studentName={student.name}
-          month={receiptPeriod.month}
-          year={receiptPeriod.year}
-          hasPaidFees
-          onClose={() => setReceiptPeriod(null)}
-        />
-      )}
-
-      {editingFees && (
+      {editingFees ? (
         <DashboardModal
           title="Edit fee types"
           subtitle='Tick fee types to charge. Use "Start from" when a fee begins mid-session.'
@@ -535,7 +294,7 @@ export default function StudentDetailPage() {
                           {fs.fee_type_name} - ₹{parseFloat(fs.amount).toLocaleString('en-IN')}
                         </span>
                       </label>
-                      {isSelected && (
+                      {isSelected ? (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-slate-500">Start from:</span>
                           <input
@@ -545,7 +304,7 @@ export default function StudentDetailPage() {
                             className={dash.fieldSm}
                           />
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
@@ -555,7 +314,7 @@ export default function StudentDetailPage() {
                   type="button"
                   onClick={handleSaveFeeChoices}
                   disabled={savingFees || editChoices.length === 0}
-                  className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0"
+                  className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500"
                 >
                   {savingFees ? 'Saving…' : 'Save'}
                 </Button>
@@ -571,7 +330,7 @@ export default function StudentDetailPage() {
             </div>
           )}
         </DashboardModal>
-      )}
+      ) : null}
     </PageShell>
   );
 }

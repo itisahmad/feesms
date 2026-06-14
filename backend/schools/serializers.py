@@ -5,6 +5,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.db.models import Q
 from datetime import date
+from django.utils import timezone
 from .models import (
     User,
     School,
@@ -122,6 +123,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         from django.utils import timezone
         school.trial_ends_at = timezone.now() + timedelta(days=30)
         school.save()
+        from .public_code import ensure_school_public_code
+        ensure_school_public_code(school)
         ensure_default_fee_types_for_school(school)
 
         # Create default classes for Bihar schools
@@ -220,6 +223,7 @@ class SchoolSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'name',
+            'public_code',
             'address',
             'city',
             'state',
@@ -242,7 +246,13 @@ class SchoolSerializer(serializers.ModelSerializer):
             'trial_ends_at',
             'created_at',
             'logo_url',
+            'public_code',
         ]
+
+    def to_representation(self, instance):
+        from .public_code import ensure_school_public_code
+        ensure_school_public_code(instance)
+        return super().to_representation(instance)
 
     def get_logo_url(self, obj):
         if not obj.logo:
@@ -323,9 +333,11 @@ class StudentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'school_class', 'section', 'class_name', 'section_name',
             'class_whatsapp_group_name', 'class_whatsapp_group_link',
-            'admission_date', 'charges_effective_from', 'uses_transport', 'parent_name', 'parent_phone', 'parent_email',
+            'admission_date', 'charges_effective_from', 'uses_transport', 'parent_name', 'parent_phone',
+            'parent_phone_verified_at', 'parent_email',
             'admission_number', 'roll_number', 'is_active', 'fee_structure_choices', 'created_at',
         ]
+        read_only_fields = ['admission_number', 'parent_phone_verified_at']
 
     def get_class_whatsapp_group_name(self, obj):
         if obj.school_class_id and obj.school_class:
@@ -336,7 +348,6 @@ class StudentSerializer(serializers.ModelSerializer):
         if obj.school_class_id and obj.school_class:
             return obj.school_class.whatsapp_group_link or ''
         return ''
-        read_only_fields = ['admission_number']
 
     def _get_school(self, attrs):
         school = attrs.get('school') or getattr(self.instance, 'school', None)
@@ -415,6 +426,20 @@ class StudentSerializer(serializers.ModelSerializer):
             if qs.exists():
                 raise serializers.ValidationError({'roll_number': 'Roll number must be unique in the selected class and section.'})
 
+        from .phone_otp import has_recent_phone_verification
+
+        if school and 'parent_phone' in attrs:
+            phone = attrs['parent_phone']
+            is_create = self.instance is None
+            phone_changed = bool(
+                self.instance and (self.instance.parent_phone or '') != phone
+            )
+            if is_create or phone_changed:
+                if not has_recent_phone_verification(school.id, phone):
+                    raise serializers.ValidationError({
+                        'parent_phone': 'Verify parent phone with OTP before saving.',
+                    })
+
         return attrs
 
     def create(self, validated_data):
@@ -435,6 +460,8 @@ class StudentSerializer(serializers.ModelSerializer):
             )
 
         student = Student.objects.create(**validated_data)
+        student.parent_phone_verified_at = timezone.now()
+        student.save(update_fields=['parent_phone_verified_at'])
         for c in choices:
             fs_id = c.get('fee_structure_id')
             effective_from = c.get('effective_from')
@@ -456,8 +483,14 @@ class StudentSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         choices = validated_data.pop('fee_structure_choices', None)
         validated_data.pop('admission_number', None)
+        phone_changed = 'parent_phone' in validated_data and (
+            (instance.parent_phone or '') != validated_data['parent_phone']
+        )
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+
+        if phone_changed:
+            instance.parent_phone_verified_at = timezone.now()
 
         if not (instance.roll_number or '').strip() and instance.school and instance.school_class and instance.section:
             instance.roll_number = self._generate_roll_number(instance.school, instance.school_class, instance.section)

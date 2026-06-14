@@ -12,7 +12,15 @@ from .models import (
 class SchoolPaymentConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = SchoolPaymentConfig
-        fields = ["id", "platform_billing_cycle", "razorpay_route_account_id", "active", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "platform_billing_cycle",
+            "razorpay_route_account_id",
+            "active",
+            "allow_parent_online_payment",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class PlatformInvoiceSerializer(serializers.ModelSerializer):

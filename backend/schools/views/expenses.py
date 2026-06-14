@@ -29,7 +29,7 @@ from ..default_fee_types import ensure_default_fee_types_for_school
 from ..fee_periods import is_struct_billable_for_period
 from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
-from ..permissions import IsSchoolOwner
+from ..permissions import IsSchoolOwner, IsSchoolStaff
 from ..services.fee_collection import (
     build_collection_summary,
     build_dashboard_stats,
@@ -39,7 +39,7 @@ from ..services.fee_collection import (
 
 class ExpenseCategoryViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
     serializer_class = ExpenseCategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def get_queryset(self):
         return super().get_queryset().order_by('name')
@@ -47,7 +47,7 @@ class ExpenseCategoryViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
 
 class VendorViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
     serializer_class = VendorSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def get_queryset(self):
         return super().get_queryset().order_by('name')
@@ -55,7 +55,7 @@ class VendorViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
 
 class ExpenseViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
     serializer_class = ExpenseSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def get_queryset(self):
         return super().get_queryset().select_related('category', 'vendor', 'created_by').order_by('-date', '-created_at')
@@ -195,7 +195,7 @@ class ExpenseViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
 
 class BudgetViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
     serializer_class = BudgetSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsSchoolStaff]
 
     def get_queryset(self):
         return super().get_queryset().select_related('category', 'school').order_by('-academic_year', 'category__name')

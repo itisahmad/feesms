@@ -14,6 +14,7 @@ type StudentResultReportModalProps = {
   studentId: number;
   studentName: string;
   onClose: () => void;
+  fetchReport?: (examId: number, studentId: number) => Promise<{ data: StudentExamReportResponse }>;
 };
 
 const formatDate = (value: string | null) => {
@@ -29,6 +30,7 @@ export function StudentResultReportModal({
   studentId,
   studentName,
   onClose,
+  fetchReport,
 }: StudentResultReportModalProps) {
   const [report, setReport] = useState<StudentExamReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,14 +39,15 @@ export function StudentResultReportModal({
   useEffect(() => {
     setLoading(true);
     setError('');
-    getStudentExamReport(examId, studentId)
+    const load = fetchReport ?? getStudentExamReport;
+    load(examId, studentId)
       .then(({ data }) => setReport(data))
       .catch((err) => {
         setReport(null);
         setError(formatApiError(err));
       })
       .finally(() => setLoading(false));
-  }, [examId, studentId]);
+  }, [examId, studentId, fetchReport]);
 
   const subjectNames = new Map(report?.subjects.map((s) => [s.id, s.name]) ?? []);
 
