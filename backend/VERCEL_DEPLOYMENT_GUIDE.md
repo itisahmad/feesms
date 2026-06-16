@@ -30,17 +30,13 @@ git push origin main
 1. Go to [Vercel Dashboard](https://vercel.com/dashboard)
 2. Import your repository
 3. Select the `backend` folder as root directory
-4. Framework preset: "Python"
-5. Set environment variables:
+4. Framework preset: **Other** (Python)
+5. Set environment variables (all required unless noted):
    ```
    DJANGO_SETTINGS_MODULE=config.settings_production
-   SECRET_KEY=your-secret-key-here
-   DEBUG=False
-   DB_NAME=your-database-name
-   DB_USER=your-database-user
-   DB_PASSWORD=your-database-password
-   DB_HOST=your-database-host
-   DB_PORT=5432
+   DJANGO_SECRET_KEY=your-secret-key-here
+   DATABASE_URL=postgresql://user:pass@host:5432/db?sslmode=require
+   CORS_ALLOWED_ORIGINS=https://feesms-frontend.vercel.app
    ```
 
 ### 3. Run Migrations

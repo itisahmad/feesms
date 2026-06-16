@@ -104,6 +104,12 @@ if not DATABASE_URL:
 parsed_db_url = urlparse(DATABASE_URL)
 db_query_params = parse_qs(parsed_db_url.query)
 
+_db_options = {
+    'sslmode': db_query_params.get('sslmode', ['require'])[0],
+}
+if 'channel_binding' in db_query_params:
+    _db_options['channel_binding'] = db_query_params['channel_binding'][0]
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -112,10 +118,7 @@ DATABASES = {
         'PASSWORD': parsed_db_url.password,
         'HOST': parsed_db_url.hostname,
         'PORT': parsed_db_url.port or 5432,
-        'OPTIONS': {
-            'sslmode': db_query_params.get('sslmode', ['require'])[0],
-            'channel_binding': db_query_params.get('channel_binding', ['require'])[0],
-        },
+        'OPTIONS': _db_options,
     }
 }
 
