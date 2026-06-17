@@ -11,7 +11,6 @@ import {
   ClipboardList,
   FileText,
   Wallet,
-  CreditCard,
   Receipt,
   ClipboardCheck,
   Megaphone,
@@ -39,7 +38,6 @@ const nav = [
   { href: '/dashboard/enquiries', label: 'Enquiries', icon: ClipboardList, moduleKey: 'enquiries' },
   { href: '/dashboard/fee-structure', label: 'Fee Structure', icon: FileText, moduleKey: 'fee_structure' },
   { href: '/dashboard/fees', label: 'Fee Collection', icon: Wallet, moduleKey: 'fee_collection' },
-  { href: '/dashboard/payments', label: 'Payments', icon: CreditCard, moduleKey: 'payments' },
   { href: '/dashboard/receipt-templates', label: 'Receipt Templates', icon: Receipt, moduleKey: 'receipt_templates' },
   { href: '/dashboard/results', label: 'Results', icon: ClipboardCheck, moduleKey: 'results' },
   { href: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, moduleKey: 'announcements' },
@@ -90,6 +88,13 @@ export default function DashboardLayout({
       }
     }
   }, [loading, user, isOwner, pathname, allowedModules, router]);
+
+  useEffect(() => {
+    if (loading || !user || !isOwner) return;
+    if (user.subscription_blocked && !pathname.startsWith('/dashboard/settings')) {
+      router.replace('/dashboard/settings?billing=required');
+    }
+  }, [loading, user, isOwner, pathname, router]);
 
   const toggleSidebar = () => {
     setCollapsed((prev) => {
@@ -316,6 +321,12 @@ export default function DashboardLayout({
             </motion.div>
           )}
         </AnimatePresence>
+        {isOwner && user.subscription_blocked && (
+          <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            Your subscription has expired. Pay online in Settings → Subscription to continue, or reduce students/staff to
+            qualify for Basic.
+          </div>
+        )}
         {children}
       </motion.main>
     </div>

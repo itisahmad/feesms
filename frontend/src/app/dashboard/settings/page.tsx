@@ -1,10 +1,22 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Settings, Check, Upload, Building2, User, Copy, Share2 } from 'lucide-react';
+import { Settings, Check, Upload, Building2, User, Copy, Share2, CreditCard, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getMe, getSchool, getPaymentConfig, updatePaymentConfig, updateSchool, upgradeSchoolPlan, type SchoolRecord } from '@/lib/api';
+import {
+  getMe,
+  getSchool,
+  getPaymentConfig,
+  updatePaymentConfig,
+  updateSchool,
+  upgradeSchoolPlan,
+  getPlatformBillingSummary,
+  createPlatformOrder,
+  verifyPlatformPayment,
+  type SchoolRecord,
+} from '@/lib/api';
 import { formatSchoolPlanLabel } from '@/lib/plan-labels';
+import { openRazorpayCheckout } from '@/lib/razorpay-checkout';
 import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
@@ -34,6 +46,21 @@ const PLANS = [
   { key: 'standard', name: 'Pro', price: '₹599/mo', students: 300, staff: 2 },
   { key: 'premium', name: 'Premium', price: '₹999/mo', students: '∞', staff: 5 },
 ] as const;
+
+const PLAN_RANK: Record<string, number> = { basic: 0, standard: 1, premium: 2 };
+
+type BillingSummary = {
+  plan: string;
+  next_monthly_amount: string;
+  plan_period_end?: string | null;
+  trial_ends_at?: string | null;
+  subscription_blocked?: boolean;
+  subscription_active?: boolean;
+  in_trial?: boolean;
+  student_count?: number;
+  staff_count?: number;
+  invoices?: Array<{ id: number; amount: string; status: string; billing_cycle: string; created_at: string }>;
+};
 
 const compactField = cn(dash.field, 'min-h-[36px] py-2 px-3 text-sm');
 const cardHead = 'border-b border-white/10 px-4 py-2';
@@ -111,6 +138,10 @@ export default function SettingsPage() {
   const [allowParentOnlinePayment, setAllowParentOnlinePayment] = useState(false);
   const [savingParentPayment, setSavingParentPayment] = useState(false);
   const [parentPaymentSaved, setParentPaymentSaved] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+  const [routeAccountId, setRouteAccountId] = useState('');
+  const [savingRoute, setSavingRoute] = useState(false);
 
   const parentPortalUrl =
     typeof window !== 'undefined' ? `${window.location.origin}/parent/login` : '/parent/login';
@@ -142,8 +173,13 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    Promise.all([getSchool(), getMe(), getPaymentConfig().catch(() => null)])
-      .then(([schoolRes, meRes, paymentRes]) => {
+    Promise.all([
+      getSchool(),
+      getMe(),
+      getPaymentConfig().catch(() => null),
+      getPlatformBillingSummary().catch(() => null),
+    ])
+      .then(([schoolRes, meRes, paymentRes, billingRes]) => {
         const s = resolveSchoolPayload(schoolRes.data);
         if (s) {
           setSchool(s);
@@ -159,6 +195,11 @@ export default function SettingsPage() {
         }
         if (paymentRes?.data) {
           setAllowParentOnlinePayment(!!paymentRes.data.allow_parent_online_payment);
+          setBillingCycle(paymentRes.data.platform_billing_cycle || 'monthly');
+          setRouteAccountId(paymentRes.data.razorpay_route_account_id || '');
+        }
+        if (billingRes?.data) {
+          setBillingSummary(billingRes.data);
         }
         const me = meRes.data;
         if (me) {
@@ -265,22 +306,85 @@ export default function SettingsPage() {
     }
   };
 
+  const refreshBilling = async () => {
+    try {
+      const [{ data: bill }, { data: schoolData }] = await Promise.all([getPlatformBillingSummary(), getSchool()]);
+      setBillingSummary(bill);
+      const s = resolveSchoolPayload(schoolData);
+      if (s) setSchool(s);
+      await refreshUser();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const currentPlan = school?.plan ?? 'standard';
+
+  const planNeedsPayment = (current: string, target: string) => {
+    if (current === target) return true;
+    return (PLAN_RANK[target] ?? 0) > (PLAN_RANK[current] ?? 0);
+  };
+
+  const payForPlan = async (plan: 'basic' | 'standard' | 'premium') => {
+    if (!school) return;
+    setUpgradingPlan(plan);
+    try {
+      const { data } = await createPlatformOrder(billingCycle, plan);
+      await openRazorpayCheckout(
+        data.order_id,
+        data.amount_paise,
+        async (resp) => {
+          await verifyPlatformPayment(resp);
+          await refreshBilling();
+          alert(`Payment successful. ${formatSchoolPlanLabel(plan)} plan is now active.`);
+        },
+        {
+          name: 'SchoolFee Pro',
+          description: `${formatSchoolPlanLabel(plan)} subscription (${billingCycle})`,
+        },
+      );
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message;
+      if (msg && msg !== 'Payment cancelled.') alert(msg);
+    } finally {
+      setUpgradingPlan(null);
+    }
+  };
+
   const handleUpgradePlan = async (plan: 'basic' | 'standard' | 'premium') => {
     if (!school) return;
-    if (school.plan === plan) return;
+    if (school.plan === plan && !school.subscription_blocked && billingSummary?.subscription_active) return;
+
+    if (planNeedsPayment(currentPlan, plan) || school.subscription_blocked) {
+      await payForPlan(plan);
+      return;
+    }
+
     setUpgradingPlan(plan);
     try {
       await upgradeSchoolPlan(school.id, plan);
-      const { data } = await getSchool();
-      const s = resolveSchoolPayload(data);
-      if (s) setSchool(s);
-      await refreshUser();
+      await refreshBilling();
       alert(`Plan changed to ${formatSchoolPlanLabel(plan)}.`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data;
       alert(msg?.error || msg?.detail || 'Failed to change plan');
     } finally {
       setUpgradingPlan(null);
+    }
+  };
+
+  const handleSaveRouteAccount = async () => {
+    setSavingRoute(true);
+    try {
+      await updatePaymentConfig({
+        platform_billing_cycle: billingCycle,
+        razorpay_route_account_id: routeAccountId.trim(),
+      });
+      alert('Payment settings saved.');
+    } catch {
+      alert('Failed to save payment settings.');
+    } finally {
+      setSavingRoute(false);
     }
   };
 
@@ -295,7 +399,13 @@ export default function SettingsPage() {
 
   const planLabel = formatSchoolPlanLabel(school.plan);
   const trialEnd = school.trial_ends_at ? new Date(school.trial_ends_at).toLocaleDateString('en-IN') : null;
+  const periodEnd = school.plan_period_end
+    ? new Date(school.plan_period_end).toLocaleDateString('en-IN')
+    : billingSummary?.plan_period_end
+      ? new Date(billingSummary.plan_period_end).toLocaleDateString('en-IN')
+      : null;
   const registeredOn = school.created_at ? new Date(school.created_at).toLocaleDateString('en-IN') : null;
+  const subscriptionBlocked = school.subscription_blocked || billingSummary?.subscription_blocked;
 
   return (
     <PageShell className="w-full">
@@ -562,10 +672,49 @@ export default function SettingsPage() {
         </div>
 
         <GlassCard delay={0.08}>
-          <SectionHead icon={Settings} title="Subscription" hint={`Current: ${planLabel}`} />
-          <div className={cn(cardBody, 'grid gap-2 sm:grid-cols-3')}>
+          <SectionHead icon={CreditCard} title="Subscription" hint={`Current: ${planLabel}`} />
+          <div className={cardBody}>
+            {subscriptionBlocked && (
+              <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  Your subscription has expired. Pay online to continue, or reduce to under 100 students and 1 staff
+                  login to be moved to Basic automatically.
+                </p>
+              </div>
+            )}
+            <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+              {billingSummary?.in_trial && trialEnd && <span>Trial ends {trialEnd}</span>}
+              {periodEnd && !subscriptionBlocked && <span>Active until {periodEnd}</span>}
+              {billingSummary && (
+                <span>
+                  Usage: {billingSummary.student_count ?? 0} students · {billingSummary.staff_count ?? 0} staff logins
+                </span>
+              )}
+            </div>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <label className={cn(dash.label, 'text-xs')}>Billing cycle</label>
+              <DashboardSelect
+                value={billingCycle}
+                onChange={(v) => setBillingCycle(v as 'monthly' | 'yearly')}
+                className={cn(dash.fieldSm, 'min-h-[32px] w-36')}
+                options={[
+                  { value: 'monthly', label: 'Monthly' },
+                  { value: 'yearly', label: 'Yearly' },
+                ]}
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
             {PLANS.map((plan) => {
               const isCurrent = school.plan === plan.key;
+              const needsPay = planNeedsPayment(currentPlan, plan.key) || !!subscriptionBlocked;
+              const btnLabel = isCurrent
+                ? subscriptionBlocked || !billingSummary?.subscription_active
+                  ? 'Pay to renew'
+                  : 'Renew'
+                : needsPay
+                  ? 'Pay & switch'
+                  : 'Downgrade';
               return (
                 <div
                   key={plan.key}
@@ -589,19 +738,58 @@ export default function SettingsPage() {
                   <Button
                     type="button"
                     size="sm"
-                    disabled={isCurrent || upgradingPlan === plan.key}
+                    disabled={upgradingPlan === plan.key || (isCurrent && !needsPay && !!billingSummary?.subscription_active && !subscriptionBlocked)}
                     onClick={() => handleUpgradePlan(plan.key)}
                     className={cn(
                       'mt-2 h-7 w-full rounded-md text-xs',
-                      isCurrent ? 'border-white/10 bg-white/5 text-slate-500' : 'border-0 bg-teal-600'
+                      isCurrent && !subscriptionBlocked && billingSummary?.subscription_active
+                        ? 'border-white/10 bg-white/5 text-slate-500'
+                        : 'border-0 bg-teal-600'
                     )}
-                    variant={isCurrent ? 'outline' : 'default'}
+                    variant={isCurrent && !subscriptionBlocked && billingSummary?.subscription_active ? 'outline' : 'default'}
                   >
-                    {isCurrent ? 'Active' : upgradingPlan === plan.key ? '…' : 'Switch'}
+                    {upgradingPlan === plan.key ? 'Processing…' : isCurrent && !subscriptionBlocked && billingSummary?.subscription_active ? 'Active' : btnLabel}
                   </Button>
                 </div>
               );
             })}
+            </div>
+            <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-xs font-medium text-slate-300">Parent fee settlement (optional)</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Razorpay Route account ID — parent online payments settle to your school account when configured.
+              </p>
+              <input
+                value={routeAccountId}
+                onChange={(e) => setRouteAccountId(e.target.value)}
+                placeholder="acc_xxxxxx"
+                className={cn(compactField, 'mt-2')}
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={savingRoute}
+                onClick={handleSaveRouteAccount}
+                className="mt-2 h-7 rounded-md border-0 bg-teal-600 text-xs"
+              >
+                {savingRoute ? 'Saving…' : 'Save payment settings'}
+              </Button>
+            </div>
+            {billingSummary?.invoices && billingSummary.invoices.length > 0 && (
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium text-slate-400">Recent platform payments</p>
+                <div className="space-y-1">
+                  {billingSummary.invoices.slice(0, 5).map((inv) => (
+                    <div key={inv.id} className="flex justify-between text-[11px] text-slate-500">
+                      <span>
+                        ₹{inv.amount} · {inv.billing_cycle} · {new Date(inv.created_at).toLocaleDateString('en-IN')}
+                      </span>
+                      <span className={inv.status === 'paid' ? 'text-teal-400' : 'text-amber-400'}>{inv.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </GlassCard>
       </div>

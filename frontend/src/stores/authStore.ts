@@ -15,6 +15,9 @@ export interface AuthUser {
   school: number | null;
   school_name: string;
   school_plan?: 'basic' | 'standard' | 'premium';
+  trial_ends_at?: string | null;
+  plan_period_end?: string | null;
+  subscription_blocked?: boolean;
   is_owner?: boolean;
   module_permissions?: ModulePermissions;
   allowed_modules?: string[];

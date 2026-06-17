@@ -31,6 +31,7 @@ from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operat
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
 from ..module_permissions import MODULE_DEFINITIONS, PERMISSION_KEYS, permissions_payload_for_user
 from ..permissions import IsSchoolOwner
+from payments.subscription_service import sync_school_subscription
 from ..services.fee_collection import (
     build_collection_summary,
     build_dashboard_stats,
@@ -59,7 +60,11 @@ class RegisterView(APIView):
 
 class CurrentUserView(APIView):
     def get(self, request):
-        ensure_default_fee_types_for_school(request.user.school)
+        school = request.user.school
+        if school:
+            sync_school_subscription(school)
+            request.user.school.refresh_from_db()
+        ensure_default_fee_types_for_school(school)
         data = UserSerializer(request.user).data
         data.update(permissions_payload_for_user(request.user))
         data["module_definitions"] = MODULE_DEFINITIONS

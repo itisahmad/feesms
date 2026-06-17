@@ -31,6 +31,7 @@ from ..fee_periods import is_struct_billable_for_period
 from ..bulk_fee_collection import pay_all_pending_operation, pay_all_year_operation
 from ..mixins import SchoolNestedMixin, SchoolScopedMixin
 from ..permissions import HasModulePermission, IsSchoolOwner
+from payments.subscription_service import can_fit_plan, plan_change_requires_payment, sync_school_subscription
 from ..services.fee_collection import (
     build_collection_summary,
     build_dashboard_stats,
@@ -63,9 +64,33 @@ class SchoolViewSet(viewsets.ModelViewSet):
         if plan not in ('basic', 'standard', 'premium'):
             return Response({'error': 'Invalid plan. Use basic, standard, or premium.'}, status=400)
 
+        if plan_change_requires_payment(school.plan, plan):
+            return Response(
+                {
+                    'error': 'Upgrades and renewals require online payment in Settings → Subscription.',
+                    'requires_payment': True,
+                },
+                status=402,
+            )
+
+        if not can_fit_plan(school, plan):
+            from payments.subscription_service import school_usage
+            usage = school_usage(school)
+            limits = School.PLAN_LIMITS[plan]
+            return Response(
+                {
+                    'error': (
+                        f'Cannot switch to {plan}: you have {usage["students"]} students (max {limits["max_students"]}) '
+                        f'and {usage["staff"]} staff logins (max {limits["max_staff_logins"]}). '
+                        'Remove students or staff first.'
+                    ),
+                },
+                status=400,
+            )
+
         school.apply_plan(plan)
         return Response({
-            'message': f'Plan updated to {plan}.',
+            'message': f'Plan downgraded to {plan}.',
             'plan': school.plan,
             'max_students': school.max_students,
             'max_staff_logins': school.max_staff_logins,

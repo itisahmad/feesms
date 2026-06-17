@@ -27,18 +27,16 @@ from .serializers import (
     SchoolPaymentConfigSerializer,
 )
 from .services import create_order, to_paise, verify_signature
-
-
-PLAN_MONTHLY_AMOUNT = {
-    "basic": Decimal("299.00"),
-    "standard": Decimal("599.00"),
-    "premium": Decimal("999.00"),
-}
+from .subscription_service import (
+    activate_plan_after_payment,
+    plan_amount,
+    subscription_status_payload,
+)
 
 
 class PaymentConfigView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
-    module_key = "payments"
+    module_key = "settings"
 
     def get(self, request):
         school = request.user.school
@@ -60,7 +58,7 @@ class PaymentConfigView(ModuleProtectedAPIView):
 
 class PlatformBillingSummaryView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
-    module_key = "payments"
+    module_key = "settings"
 
     def get(self, request):
         school = request.user.school
@@ -68,11 +66,10 @@ class PlatformBillingSummaryView(ModuleProtectedAPIView):
             return Response({"error": "No school assigned."}, status=400)
 
         invoices = PlatformInvoice.objects.filter(school=school).order_by("-created_at")[:20]
-        next_amount = PLAN_MONTHLY_AMOUNT.get(school.plan, Decimal("599.00"))
+        status_info = subscription_status_payload(school)
         return Response(
             {
-                "plan": school.plan,
-                "next_monthly_amount": str(next_amount),
+                **status_info,
                 "invoices": PlatformInvoiceSerializer(invoices, many=True).data,
             }
         )
@@ -80,32 +77,45 @@ class PlatformBillingSummaryView(ModuleProtectedAPIView):
 
 class PlatformCreateOrderView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
-    module_key = "payments"
+    module_key = "settings"
 
     def post(self, request):
         school = request.user.school
         if not school:
             return Response({"error": "No school assigned."}, status=400)
+        if request.user.role != "owner":
+            return Response({"error": "Only school owner can pay for subscription."}, status=403)
 
         billing_cycle = request.data.get("billing_cycle", "monthly")
         if billing_cycle not in ("monthly", "yearly"):
             return Response({"error": "billing_cycle must be monthly or yearly"}, status=400)
 
-        base = PLAN_MONTHLY_AMOUNT.get(school.plan, Decimal("599.00"))
-        amount = base if billing_cycle == "monthly" else base * Decimal("12")
+        target_plan = (request.data.get("target_plan") or school.plan).strip().lower()
+        if target_plan not in ("basic", "standard", "premium"):
+            return Response({"error": "Invalid target_plan."}, status=400)
+
+        amount = plan_amount(target_plan, billing_cycle)
         invoice = PlatformInvoice.objects.create(
             school=school,
             billing_cycle=billing_cycle,
             amount=amount,
             status="pending",
             due_date=timezone.now().date(),
-            notes={"plan": school.plan},
+            notes={
+                "target_plan": target_plan,
+                "action": "renewal" if target_plan == school.plan else "plan_change",
+            },
         )
 
         order = create_order(
             amount=amount,
             receipt=f"platform_{invoice.id}",
-            notes={"invoice_id": str(invoice.id), "school_id": str(school.id), "type": "platform"},
+            notes={
+                "invoice_id": str(invoice.id),
+                "school_id": str(school.id),
+                "type": "platform",
+                "target_plan": target_plan,
+            },
         )
         tx = PlatformPaymentTransaction.objects.create(
             invoice=invoice,
@@ -122,6 +132,7 @@ class PlatformCreateOrderView(ModuleProtectedAPIView):
                 "amount_paise": order.get("amount"),
                 "currency": order.get("currency", "INR"),
                 "transaction_id": tx.id,
+                "target_plan": target_plan,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -129,12 +140,14 @@ class PlatformCreateOrderView(ModuleProtectedAPIView):
 
 class PlatformVerifyPaymentView(ModuleProtectedAPIView):
     permission_classes = [permissions.IsAuthenticated]
-    module_key = "payments"
+    module_key = "settings"
 
     def post(self, request):
         school = request.user.school
         if not school:
             return Response({"error": "No school assigned."}, status=400)
+        if request.user.role != "owner":
+            return Response({"error": "Only school owner can verify subscription payment."}, status=403)
 
         order_id = request.data.get("razorpay_order_id", "")
         payment_id = request.data.get("razorpay_payment_id", "")
@@ -159,7 +172,20 @@ class PlatformVerifyPaymentView(ModuleProtectedAPIView):
         invoice.status = "paid"
         invoice.paid_at = timezone.now()
         invoice.save()
-        return Response({"message": "Platform payment captured.", "invoice_id": invoice.id})
+
+        notes = invoice.notes or {}
+        target_plan = (notes.get("target_plan") or school.plan).strip().lower()
+        activate_plan_after_payment(school, target_plan, invoice.billing_cycle, invoice)
+
+        return Response(
+            {
+                "message": f"Subscription payment captured. Plan active until {school.plan_period_end}.",
+                "invoice_id": invoice.id,
+                "plan": school.plan,
+                "plan_period_end": school.plan_period_end,
+                "subscription_blocked": school.subscription_blocked,
+            }
+        )
 
 
 class ParentCreateIntentView(APIView):

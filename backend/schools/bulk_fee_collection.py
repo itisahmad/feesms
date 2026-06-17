@@ -14,7 +14,7 @@ from rest_framework.response import Response
 
 from .fee_periods import is_struct_billable_for_period
 from .late_fine import unpaid_balance
-from .models import FeePayment, FeeStructure, Student, StudentFee
+from .models import FeePayment, FeeStructure, Student, StudentFee, StudentFeeStructureChoice
 
 
 def _student_fee_balance(sf: StudentFee, as_of: date | None = None) -> float:
@@ -139,6 +139,59 @@ def parse_fee_structure_ids(raw_selected_ids):
         return None, Response({"error": "fee_structure_ids must be a list of integers"}, status=400)
 
 
+def _assigned_fee_structure_ids(student) -> set[int]:
+    return set(
+        StudentFeeStructureChoice.objects.filter(student=student).values_list("fee_structure_id", flat=True)
+    )
+
+
+def _fee_structure_ids_with_unpaid_in_scope(student, month: int, year: int, only_this_month: bool) -> set[int]:
+    if only_this_month:
+        fee_filter = Q(month=month, year=year)
+    else:
+        fee_filter = Q(year__lt=year) | Q(year=year, month__lte=month)
+    qs = StudentFee.objects.filter(student=student).filter(fee_filter).prefetch_related("payments")
+    result: set[int] = set()
+    for sf in qs:
+        if _student_fee_balance(sf) > 0.01:
+            result.add(sf.fee_structure_id)
+    return result
+
+
+def drop_declined_fee_assignments(
+    student,
+    selected_fee_structure_ids,
+    *,
+    month: int,
+    year: int,
+    only_this_month: bool = True,
+    offered_fee_structure_ids=None,
+) -> list[int]:
+    """
+    Unchecked fee types at payment time are treated as opt-outs: remove them from the
+    student's assigned fee structures so status is not left as partial.
+    """
+    if selected_fee_structure_ids is None:
+        return []
+
+    assigned = _assigned_fee_structure_ids(student)
+    if not assigned:
+        return []
+
+    selected = set(selected_fee_structure_ids)
+    if offered_fee_structure_ids is not None:
+        declined = assigned & set(offered_fee_structure_ids) - selected
+    else:
+        unpaid_in_scope = _fee_structure_ids_with_unpaid_in_scope(student, month, year, only_this_month)
+        declined = assigned & unpaid_in_scope - selected
+
+    if not declined:
+        return []
+
+    StudentFeeStructureChoice.objects.filter(student=student, fee_structure_id__in=declined).delete()
+    return sorted(declined)
+
+
 def pay_all_pending_operation(user, data, payment_mode=None, notes_override=None):
     """
     Record pay-all-pending (single month or all up to month).
@@ -217,30 +270,45 @@ def pay_all_pending_operation(user, data, payment_mode=None, notes_override=None
         last_sf, last_amt = payment_rows[-1]
         payment_rows[-1] = (last_sf, last_amt + delta)
 
-    for sf, pay_amount in payment_rows:
-        if pay_amount <= 0:
-            continue
-        discount_amt = Decimal("0")
-        payment = FeePayment.objects.create(
-            student_fee=sf,
-            amount=pay_amount,
-            discount=discount_amt,
-            payment_date=payment_date,
-            payment_mode=payment_mode,
-            transaction_id=transaction_id or "",
-            notes=notes,
-            created_by=user,
+    dropped_ids: list[int] = []
+    with transaction.atomic():
+        for sf, pay_amount in payment_rows:
+            if pay_amount <= 0:
+                continue
+            discount_amt = Decimal("0")
+            payment = FeePayment.objects.create(
+                student_fee=sf,
+                amount=pay_amount,
+                discount=discount_amt,
+                payment_date=payment_date,
+                payment_mode=payment_mode,
+                transaction_id=transaction_id or "",
+                notes=notes,
+                created_by=user,
+            )
+            payment.receipt_number = f"RCP-{school.id}-{payment.id:06d}"
+            payment.save()
+            created += 1
+
+        dropped_ids = drop_declined_fee_assignments(
+            student,
+            selected_fee_structure_ids,
+            month=month,
+            year=year,
+            only_this_month=only_this_month,
         )
-        payment.receipt_number = f"RCP-{school.id}-{payment.id:06d}"
-        payment.save()
-        created += 1
+
+    message = f"Recorded payment for {created} fee(s), total ₹{float(total):.2f}"
+    if dropped_ids:
+        message += f". Removed {len(dropped_ids)} unselected fee type(s) from student assignment."
 
     return Response(
         {
-            "message": f"Recorded payment for {created} fee(s), total ₹{float(total):.2f}",
+            "message": message,
             "total_amount": float(total),
             "base_amount": float(base_total),
             "fees_cleared": created,
+            "dropped_fee_structure_ids": dropped_ids,
         },
         status=status.HTTP_201_CREATED,
     )
@@ -369,6 +437,8 @@ def pay_all_year_operation(user, data, payment_mode=None, notes_override=None):
             if not s.fee_type.name.lower().startswith("transport") or getattr(student, "uses_transport", True)
         ]
 
+    offered_struct_ids = [s.id for s in structs_to_use]
+
     if selected_fee_structure_ids is not None:
         selected_qs = FeeStructure.objects.filter(school=school, id__in=selected_fee_structure_ids).select_related("fee_type")
         if student.school_class:
@@ -479,13 +549,26 @@ def pay_all_year_operation(user, data, payment_mode=None, notes_override=None):
             payment.save()
             created += 1
 
+        dropped_ids = drop_declined_fee_assignments(
+            student,
+            selected_fee_structure_ids,
+            month=month,
+            year=year,
+            offered_fee_structure_ids=offered_struct_ids,
+        )
+
+    message = f"Recorded full year payment for {created} fee(s), all fee types"
+    if dropped_ids:
+        message += f". Removed {len(dropped_ids)} unselected fee type(s) from student assignment."
+
     return Response(
         {
-            "message": f"Recorded full year payment for {created} fee(s), all fee types",
+            "message": message,
             "total_amount": float(sum(b for _, b, _ in to_pay)),
             "amount_paid": float(total_paid),
             "base_amount": float(base_paid),
             "fees_cleared": created,
+            "dropped_fee_structure_ids": dropped_ids,
         },
         status=status.HTTP_201_CREATED,
     )

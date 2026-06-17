@@ -71,6 +71,15 @@ class School(models.Model):
         help_text='School billing day (1–28): used when adding students to decide if the join month is billed.',
     )
     trial_ends_at = models.DateTimeField(null=True, blank=True)
+    plan_period_end = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Last day of the current paid subscription period.",
+    )
+    subscription_blocked = models.BooleanField(
+        default=False,
+        help_text="When true, dashboard access is limited until the owner renews or downgrades usage.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

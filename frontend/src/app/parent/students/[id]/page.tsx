@@ -17,7 +17,6 @@ import { cn } from '@/lib/utils';
 import {
   StudentProfileHeader,
   StudentProfileOverview,
-  StudentFeesSection,
   StudentPaymentsSection,
   StudentResultsSection,
   computeFeeSummary,
@@ -101,7 +100,7 @@ export default function ParentStudentProfilePage() {
     );
   }
 
-  const { student, admission_date, fee_choices, yearly_payments = [], monthly_history, published_results = [], allow_parent_online_payment = false } = data;
+  const { student, admission_date, yearly_payments = [], monthly_history, published_results = [], allow_parent_online_payment = false } = data;
   const feeSummary = computeFeeSummary(data);
   const showPayButton = allow_parent_online_payment && feeSummary.totalPending > 0;
 
@@ -157,15 +156,12 @@ export default function ParentStudentProfilePage() {
           onViewFees={scrollToPayments}
         />
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <StudentFeesSection feeChoices={fee_choices} readOnly />
-          <StudentProfileOverview
-            studentId={id}
-            publishedResults={published_results}
-            fetchExamReport={(examId, studentId) => getParentStudentExamReport(studentId, examId)}
-            onOpenExam={(examId, examName) => setSelectedExam({ id: examId, name: examName })}
-          />
-        </div>
+        <StudentProfileOverview
+          studentId={id}
+          publishedResults={published_results}
+          fetchExamReport={(examId, studentId) => getParentStudentExamReport(studentId, examId)}
+          onOpenExam={(examId, examName) => setSelectedExam({ id: examId, name: examName })}
+        />
 
         <StudentResultsSection
           results={published_results}

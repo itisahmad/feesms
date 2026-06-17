@@ -39,13 +39,18 @@ class SchoolReceiptSettingsView(APIView):
         assert_can_view_templates(request.user)
         school = request.user.school
         settings = get_or_create_settings(school)
-        return Response(SchoolReceiptSettingsSerializer(settings).data)
+        return Response(SchoolReceiptSettingsSerializer(settings, context={'request': request}).data)
 
     def patch(self, request):
         assert_can_edit_template_settings(request.user)
         school = request.user.school
         settings = get_or_create_settings(school)
-        serializer = SchoolReceiptSettingsSerializer(settings, data=request.data, partial=True)
+        serializer = SchoolReceiptSettingsSerializer(
+            settings,
+            data=request.data,
+            partial=True,
+            context={'request': request},
+        )
         serializer.is_valid(raise_exception=True)
         template_key = serializer.validated_data.get('template_key', settings.template_key)
         print_format = serializer.validated_data.get('print_format', settings.print_format)
@@ -62,7 +67,7 @@ class SchoolReceiptSettingsView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         serializer.save()
-        return Response(serializer.data)
+        return Response(SchoolReceiptSettingsSerializer(settings, context={'request': request}).data)
 
 
 class ReceiptPreviewView(APIView):
@@ -73,8 +78,9 @@ class ReceiptPreviewView(APIView):
         school = request.user.school
         settings = get_or_create_settings(school)
         overrides = request.data or {}
+        skip_override = {'updated_at', 'signature_image', 'signature_image_url', 'clear_signature_image'}
         for field in SchoolReceiptSettingsSerializer.Meta.fields:
-            if field in overrides and field != 'updated_at':
+            if field in overrides and field not in skip_override:
                 setattr(settings, field, overrides[field])
         receipt_type = overrides.get('receipt_type') or RECEIPT_MONTHLY
         if receipt_type not in (RECEIPT_MONTHLY, RECEIPT_YEARLY):

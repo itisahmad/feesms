@@ -47,6 +47,7 @@ def resolve_branding(school, settings: SchoolReceiptSettings | None = None) -> d
         'header_color': settings.header_color or '#0d9488',
         'footer_text': settings.footer_text or 'This is a computer-generated receipt.',
         'signature_label': settings.signature_label or 'Authorized Signatory',
+        'signature_image_path': settings.signature_image.path if settings.signature_image else None,
         'stamp_text': settings.stamp_text or '',
         'show_logo': settings.show_logo,
         'logo_path': school.logo.path if settings.show_logo and school.logo else None,

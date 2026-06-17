@@ -38,6 +38,12 @@ class SchoolReceiptSettings(models.Model):
         blank=True,
         default='Authorized Signatory',
     )
+    signature_image = models.ImageField(
+        upload_to='receipt_signatures/',
+        blank=True,
+        null=True,
+        help_text='Uploaded signature image shown on printed receipts.',
+    )
     stamp_text = models.CharField(max_length=120, blank=True)
     show_logo = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)

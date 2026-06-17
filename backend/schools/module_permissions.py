@@ -16,7 +16,6 @@ MODULE_DEFINITIONS = [
     {"key": "enquiries", "label": "Enquiries", "path": "/dashboard/enquiries"},
     {"key": "fee_structure", "label": "Fee Structure", "path": "/dashboard/fee-structure"},
     {"key": "fee_collection", "label": "Fee Collection", "path": "/dashboard/fees"},
-    {"key": "payments", "label": "Payments", "path": "/dashboard/payments"},
     {"key": "receipt_templates", "label": "Receipt Templates", "path": "/dashboard/receipt-templates"},
     {"key": "results", "label": "Results", "path": "/dashboard/results"},
     {"key": "announcements", "label": "Announcements", "path": "/dashboard/announcements"},

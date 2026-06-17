@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileStack, Eye, Save, Printer, Check } from 'lucide-react';
+import { FileStack, Eye, Save, Printer, Check, Upload, X } from 'lucide-react';
 import {
   getReceiptSettings,
   getReceiptTemplates,
@@ -43,6 +43,9 @@ export default function ReceiptTemplatesPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
 
   const selectedTemplate = templates.find((t) => t.key === form.template_key);
 
@@ -59,6 +62,7 @@ export default function ReceiptTemplatesPage() {
       .then(([tplRes, settingsRes]) => {
         setTemplates(tplRes.data);
         setForm({ ...DEFAULT_SETTINGS, ...settingsRes.data });
+        setSignaturePreview(settingsRes.data.signature_image_url || null);
       })
       .catch(() => alert('Failed to load receipt settings'))
       .finally(() => setLoading(false));
@@ -110,6 +114,7 @@ export default function ReceiptTemplatesPage() {
     try {
       const { data } = await updateReceiptSettings(form);
       setForm({ ...form, ...data });
+      setSignaturePreview(data.signature_image_url || null);
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2500);
       await refreshPreview({ ...form, ...data });
@@ -117,6 +122,46 @@ export default function ReceiptTemplatesPage() {
       alert('Failed to save receipt settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit('receipt_templates')) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, JPG, etc.).');
+      return;
+    }
+    setUploadingSignature(true);
+    try {
+      const fd = new FormData();
+      fd.append('signature_image', file);
+      const { data } = await updateReceiptSettings(fd);
+      setForm((f) => ({ ...f, ...data }));
+      setSignaturePreview(data.signature_image_url || URL.createObjectURL(file));
+      await refreshPreview({ ...form, ...data });
+    } catch {
+      alert('Failed to upload signature');
+    } finally {
+      setUploadingSignature(false);
+      if (signatureInputRef.current) signatureInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveSignature = async () => {
+    if (!canEdit('receipt_templates')) return;
+    if (!signaturePreview) return;
+    setUploadingSignature(true);
+    try {
+      const { data } = await updateReceiptSettings({ clear_signature_image: true });
+      setForm((f) => ({ ...f, ...data, signature_image_url: null }));
+      setSignaturePreview(null);
+      await refreshPreview({ ...form, ...data });
+    } catch {
+      alert('Failed to remove signature');
+    } finally {
+      setUploadingSignature(false);
     }
   };
 
@@ -202,7 +247,8 @@ export default function ReceiptTemplatesPage() {
           <div className="border-b border-white/10 px-6 py-4">
             <h2 className={dash.sectionTitle}>Branding & options</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Leave fields blank to use your school profile from Settings. Upload logo there.
+              Upload your school logo in Settings — it appears at the top of receipts instead of the school name.
+              Override fields below only if needed.
             </p>
           </div>
           <div className="space-y-4 p-6">
@@ -291,6 +337,57 @@ export default function ReceiptTemplatesPage() {
                 className={dash.field}
                 disabled={!canEdit('receipt_templates')}
               />
+            </div>
+            <div>
+              <label className={dash.label}>Signature image</label>
+              <p className="mb-2 text-xs text-slate-500">
+                Upload the school owner&apos;s signature — it appears on printed and downloaded receipts.
+              </p>
+              <input
+                ref={signatureInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleSignatureUpload}
+                disabled={!canEdit('receipt_templates') || uploadingSignature}
+              />
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="flex h-20 min-w-[140px] items-center justify-center rounded-lg border border-dashed border-white/15 bg-white/[0.03] px-3">
+                  {signaturePreview ? (
+                    <img src={signaturePreview} alt="Signature preview" className="max-h-16 max-w-[200px] object-contain" />
+                  ) : (
+                    <span className="text-xs text-slate-500">No signature uploaded</span>
+                  )}
+                </div>
+                {canEdit('receipt_templates') && (
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={uploadingSignature}
+                      onClick={() => signatureInputRef.current?.click()}
+                      className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
+                    >
+                      <Upload className="mr-1.5 h-4 w-4" />
+                      {uploadingSignature ? 'Uploading…' : signaturePreview ? 'Change signature' : 'Upload signature'}
+                    </Button>
+                    {signaturePreview && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={uploadingSignature}
+                        onClick={handleRemoveSignature}
+                        className="border-white/15 bg-white/5 text-slate-400 hover:bg-white/10"
+                      >
+                        <X className="mr-1.5 h-4 w-4" />
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <motion.div>
               <label className={dash.label}>Stamp / seal text (optional)</label>

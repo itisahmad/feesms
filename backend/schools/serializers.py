@@ -48,6 +48,9 @@ class ModulePermissionsField(serializers.JSONField):
 class UserSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.name', read_only=True)
     school_plan = serializers.CharField(source='school.plan', read_only=True)
+    trial_ends_at = serializers.DateTimeField(source='school.trial_ends_at', read_only=True)
+    plan_period_end = serializers.DateField(source='school.plan_period_end', read_only=True)
+    subscription_blocked = serializers.BooleanField(source='school.subscription_blocked', read_only=True)
     module_permissions = ModulePermissionsField(required=False)
     allowed_modules = serializers.SerializerMethodField()
     is_owner = serializers.SerializerMethodField()
@@ -66,6 +69,9 @@ class UserSerializer(serializers.ModelSerializer):
             'school',
             'school_name',
             'school_plan',
+            'trial_ends_at',
+            'plan_period_end',
+            'subscription_blocked',
             'module_permissions',
             'allowed_modules',
             'is_owner',
@@ -237,6 +243,8 @@ class SchoolSerializer(serializers.ModelSerializer):
             'academic_year_start_month',
             'fee_start_day',
             'trial_ends_at',
+            'plan_period_end',
+            'subscription_blocked',
             'created_at',
         ]
         read_only_fields = [
@@ -244,6 +252,8 @@ class SchoolSerializer(serializers.ModelSerializer):
             'max_students',
             'max_staff_logins',
             'trial_ends_at',
+            'plan_period_end',
+            'subscription_blocked',
             'created_at',
             'logo_url',
             'public_code',

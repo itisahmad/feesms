@@ -11,6 +11,9 @@ api.interceptors.request.use((config) => {
     const token = localStorage.getItem('access');
     if (token) config.headers.Authorization = `Bearer ${token}`;
   }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
   return config;
 });
 
@@ -190,6 +193,8 @@ export type SchoolRecord = {
   academic_year_start_month: number;
   fee_start_day?: number;
   trial_ends_at?: string | null;
+  plan_period_end?: string | null;
+  subscription_blocked?: boolean;
   created_at?: string;
 };
 
@@ -398,8 +403,10 @@ export const updatePaymentConfig = (data: {
   allow_parent_online_payment?: boolean;
 }) => api.patch('/payments/config/', data);
 export const getPlatformBillingSummary = () => api.get('/payments/platform/summary/');
-export const createPlatformOrder = (billing_cycle: 'monthly' | 'yearly') =>
-  api.post('/payments/platform/create-order/', { billing_cycle });
+export const createPlatformOrder = (
+  billing_cycle: 'monthly' | 'yearly',
+  target_plan?: 'basic' | 'standard' | 'premium',
+) => api.post('/payments/platform/create-order/', { billing_cycle, target_plan });
 export const verifyPlatformPayment = (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
   api.post('/payments/platform/verify/', data);
 export const createParentPaymentIntent = (data: { student_fee_id: number; amount: number; notes?: string }) =>
@@ -448,6 +455,9 @@ export type ReceiptSettingsPayload = {
   header_color: string;
   footer_text: string;
   signature_label: string;
+  signature_image?: string | null;
+  signature_image_url?: string | null;
+  clear_signature_image?: boolean;
   stamp_text: string;
   show_logo: boolean;
   updated_at?: string;
@@ -455,7 +465,7 @@ export type ReceiptSettingsPayload = {
 
 export const getReceiptTemplates = () => api.get<ReceiptTemplateMeta[]>('/receipts/templates/');
 export const getReceiptSettings = () => api.get<ReceiptSettingsPayload>('/receipts/settings/');
-export const updateReceiptSettings = (data: Partial<ReceiptSettingsPayload>) =>
+export const updateReceiptSettings = (data: Partial<ReceiptSettingsPayload> | FormData) =>
   api.patch<ReceiptSettingsPayload>('/receipts/settings/', data);
 export const previewReceiptPdf = (data?: Partial<ReceiptSettingsPayload>) =>
   api.post('/receipts/preview/', data ?? {}, { responseType: 'blob' });

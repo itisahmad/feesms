@@ -23,7 +23,6 @@ export const STAFF_MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'enquiries', label: 'Enquiries', path: '/dashboard/enquiries' },
   { key: 'fee_structure', label: 'Fee Structure', path: '/dashboard/fee-structure' },
   { key: 'fee_collection', label: 'Fee Collection', path: '/dashboard/fees' },
-  { key: 'payments', label: 'Payments', path: '/dashboard/payments' },
   { key: 'receipt_templates', label: 'Receipt Templates', path: '/dashboard/receipt-templates' },
   { key: 'results', label: 'Results', path: '/dashboard/results' },
   { key: 'announcements', label: 'Announcements', path: '/dashboard/announcements' },
@@ -88,7 +87,6 @@ export function pathnameToModuleKey(pathname: string): string | null {
   if (pathname.startsWith('/dashboard/classes')) return 'classes';
   if (pathname.startsWith('/dashboard/enquiries')) return 'enquiries';
   if (pathname.startsWith('/dashboard/fee-structure')) return 'fee_structure';
-  if (pathname.startsWith('/dashboard/payments')) return 'payments';
   if (pathname.startsWith('/dashboard/receipt-templates')) return 'receipt_templates';
   if (pathname.startsWith('/dashboard/results')) return 'results';
   if (pathname.startsWith('/dashboard/announcements')) return 'announcements';
