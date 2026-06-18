@@ -5,7 +5,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView, CurrentUserView, ForgotPasswordView, ResetPasswordView,
     SchoolViewSet, SchoolClassViewSet, StudentViewSet, FeeTypeViewSet, FeeStructureViewSet, StudentFeeViewSet,
-    StaffUserViewSet, ExpenseCategoryViewSet, VendorViewSet, ExpenseViewSet, BudgetViewSet,
+    StaffUserViewSet, StaffLoginView, SchoolStaffRoleViewSet, ExpenseCategoryViewSet, VendorViewSet, ExpenseViewSet, BudgetViewSet,
     AdmissionEnquiryViewSet,
 )
 from .auth_views import SchoolTokenObtainPairView
@@ -33,6 +33,7 @@ router.register(r'schools', SchoolViewSet, basename='school')
 router.register(r'classes', SchoolClassViewSet, basename='schoolclass')
 router.register(r'students', StudentViewSet, basename='student')
 router.register(r'enquiries', AdmissionEnquiryViewSet, basename='admissionenquiry')
+router.register(r'staff-roles', SchoolStaffRoleViewSet, basename='staffrole')
 router.register(r'staff-users', StaffUserViewSet, basename='staffuser')
 router.register(r'fee-types', FeeTypeViewSet, basename='feetype')
 router.register(r'fee-structures', FeeStructureViewSet, basename='feestructure')
@@ -47,6 +48,7 @@ urlpatterns = [
     path('auth/me/', CurrentUserView.as_view()),
     path('auth/forgot-password/', ForgotPasswordView.as_view()),
     path('auth/reset-password/', ResetPasswordView.as_view()),
+    path('staff/auth/login/', StaffLoginView.as_view()),
     # Parent portal auth (register, login, forgot password)
     path('parent/auth/send-otp/', ParentSendOTPView.as_view()),
     path('parent/auth/register/', ParentRegisterView.as_view()),

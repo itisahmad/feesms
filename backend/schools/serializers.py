@@ -9,6 +9,7 @@ from django.utils import timezone
 from .models import (
     User,
     School,
+    SchoolStaffRole,
     SchoolClass,
     Section,
     ClassSubject,
@@ -54,6 +55,7 @@ class UserSerializer(serializers.ModelSerializer):
     module_permissions = ModulePermissionsField(required=False)
     allowed_modules = serializers.SerializerMethodField()
     is_owner = serializers.SerializerMethodField()
+    staff_role_name = serializers.CharField(source='staff_role.name', read_only=True, allow_null=True)
 
     class Meta:
         model = User
@@ -72,6 +74,8 @@ class UserSerializer(serializers.ModelSerializer):
             'trial_ends_at',
             'plan_period_end',
             'subscription_blocked',
+            'staff_role',
+            'staff_role_name',
             'module_permissions',
             'allowed_modules',
             'is_owner',
@@ -83,6 +87,40 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_is_owner(self, obj):
         return obj.role == "owner"
+
+
+class SchoolStaffRoleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SchoolStaffRole
+        fields = [
+            'id',
+            'name',
+            'slug',
+            'description',
+            'is_system',
+            'created_at',
+        ]
+        read_only_fields = ['slug', 'is_system', 'created_at']
+
+    def validate_name(self, value):
+        name = (value or '').strip()
+        if not name:
+            raise serializers.ValidationError('Role name is required.')
+        return name
+
+    def create(self, validated_data):
+        school = self.context['school']
+        from .staff_roles import make_unique_role_slug
+        validated_data['school'] = school
+        validated_data['slug'] = make_unique_role_slug(school, validated_data['name'])
+        validated_data['module_permissions'] = {}
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if 'name' in validated_data and validated_data['name'] != instance.name:
+            from .staff_roles import make_unique_role_slug
+            validated_data['slug'] = make_unique_role_slug(instance.school, validated_data['name'])
+        return super().update(instance, validated_data)
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -132,6 +170,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         from .public_code import ensure_school_public_code
         ensure_school_public_code(school)
         ensure_default_fee_types_for_school(school)
+        from .staff_roles import seed_default_staff_roles
+        seed_default_staff_roles(school)
 
         # Create default classes for Bihar schools
         from .models import Section
@@ -160,6 +200,11 @@ class StaffUserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password2 = serializers.CharField(write_only=True)
     module_permissions = ModulePermissionsField(required=False)
+    staff_role = serializers.PrimaryKeyRelatedField(
+        queryset=SchoolStaffRole.objects.all(),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = User
@@ -171,6 +216,7 @@ class StaffUserCreateSerializer(serializers.ModelSerializer):
             'phone',
             'password',
             'password2',
+            'staff_role',
             'module_permissions',
         ]
 
@@ -187,6 +233,14 @@ class StaffUserCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({'password': "Passwords don't match."})
+        staff_role = attrs.get('staff_role')
+        school = self.context.get('school')
+        if staff_role and school and staff_role.school_id != school.id:
+            raise serializers.ValidationError({'staff_role': 'Invalid role for this school.'})
+        perms = attrs.get('module_permissions') or {}
+        has_perms = any((v or {}).get('view') for v in perms.values() if isinstance(v, dict))
+        if not has_perms:
+            raise serializers.ValidationError('Assign at least one module with View access.')
         return attrs
 
     def create(self, validated_data):
@@ -199,10 +253,23 @@ class StaffUserCreateSerializer(serializers.ModelSerializer):
 
 class StaffUserUpdateSerializer(serializers.ModelSerializer):
     module_permissions = ModulePermissionsField(required=False)
+    staff_role = serializers.PrimaryKeyRelatedField(
+        queryset=SchoolStaffRole.objects.all(),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = User
-        fields = ['email', 'first_name', 'last_name', 'phone', 'is_active', 'module_permissions']
+        fields = ['email', 'first_name', 'last_name', 'phone', 'is_active', 'staff_role', 'module_permissions']
+
+    def validate_staff_role(self, value):
+        if value is None:
+            return value
+        school = self.context.get('school')
+        if school and value.school_id != school.id:
+            raise serializers.ValidationError('Invalid role for this school.')
+        return value
 
 
 class ForgotPasswordSerializer(serializers.Serializer):

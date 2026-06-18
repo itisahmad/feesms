@@ -35,6 +35,7 @@ from ..services.fee_collection import (
     build_dashboard_stats,
     build_student_fee_history,
 )
+from ..services.student_promotion import build_promotion_preview, promote_students
 
 
 class StudentViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
@@ -66,6 +67,60 @@ class StudentViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
     def fee_history(self, request, pk=None):
         student = self.get_object()
         return Response(build_student_fee_history(student))
+
+    @action(detail=False, methods=['get'], url_path='promotion-preview')
+    def promotion_preview(self, request):
+        school = self.get_user_school()
+        if not school:
+            return Response({'error': 'No school'}, status=status.HTTP_400_BAD_REQUEST)
+        class_id = request.query_params.get('class')
+        if not class_id:
+            return Response({'error': 'class query parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+        section_id = request.query_params.get('section')
+        academic_year = request.query_params.get('academic_year')
+        try:
+            data = build_promotion_preview(
+                school,
+                school_class_id=int(class_id),
+                section_id=int(section_id) if section_id else None,
+                academic_year=academic_year or None,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(data)
+
+    @action(detail=False, methods=['post'], url_path='promote')
+    def promote(self, request):
+        school = self.get_user_school()
+        if not school:
+            return Response({'error': 'No school'}, status=status.HTTP_400_BAD_REQUEST)
+        class_id = request.data.get('school_class_id') or request.data.get('class')
+        if not class_id:
+            return Response({'error': 'school_class_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        section_id = request.data.get('section_id')
+        student_ids = request.data.get('student_ids')
+        exclude_student_ids = request.data.get('exclude_student_ids')
+        target_class_id = request.data.get('target_class_id')
+        target_section_id = request.data.get('target_section_id')
+        regenerate_roll_numbers = request.data.get('regenerate_roll_numbers', True)
+        academic_year = request.data.get('academic_year')
+        graduate_inactive = request.data.get('graduate_inactive', True)
+        try:
+            result = promote_students(
+                school,
+                school_class_id=int(class_id),
+                section_id=int(section_id) if section_id else None,
+                student_ids=student_ids if student_ids is not None else None,
+                exclude_student_ids=exclude_student_ids or None,
+                target_class_id=int(target_class_id) if target_class_id else None,
+                target_section_id=int(target_section_id) if target_section_id else None,
+                regenerate_roll_numbers=bool(regenerate_roll_numbers),
+                academic_year=academic_year or None,
+                graduate_inactive=bool(graduate_inactive),
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
 
 
 class FeeTypeViewSet(viewsets.ModelViewSet):

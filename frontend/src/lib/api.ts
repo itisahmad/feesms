@@ -55,9 +55,15 @@ export const register = (data: {
   school_phone?: string;
 }) => api.post('/auth/register/', data);
 
-/** Owners: email + password. Staff: username + password. */
+/** School owners: email + password. */
 export const login = (loginId: string, password: string) =>
   api.post('/token/', { login: loginId, password });
+
+export const staffLogin = (school_code: string, username: string, password: string) =>
+  api.post<{ access: string; refresh: string; role: string }>(
+    '/staff/auth/login/',
+    { school_code, username, password },
+  );
 
 export const getMe = () => api.get('/auth/me/');
 export const forgotPassword = (username_or_email: string) =>
@@ -163,6 +169,7 @@ export const createStaffUser = (data: {
   phone?: string;
   password: string;
   password2: string;
+  staff_role?: number | null;
   module_permissions?: Record<string, Record<string, boolean>>;
 }) => api.post('/staff-users/', data);
 export const updateStaffUser = (id: number, data: {
@@ -171,9 +178,178 @@ export const updateStaffUser = (id: number, data: {
   last_name?: string;
   phone?: string;
   is_active?: boolean;
+  staff_role?: number | null;
   module_permissions?: Record<string, Record<string, boolean>>;
 }) => api.patch(`/staff-users/${id}/`, data);
 export const deleteStaffUser = (id: number) => api.delete(`/staff-users/${id}/`);
+
+// Staff roles
+export type StaffRole = {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  is_system: boolean;
+};
+
+export const getStaffRoles = () => api.get<StaffRole[]>('/staff-roles/');
+export const createStaffRole = (data: {
+  name: string;
+  description?: string;
+}) => api.post<StaffRole>('/staff-roles/', data);
+export const updateStaffRole = (id: number, data: {
+  name?: string;
+  description?: string;
+}) => api.patch<StaffRole>(`/staff-roles/${id}/`, data);
+export const deleteStaffRole = (id: number) => api.delete(`/staff-roles/${id}/`);
+
+// Attendance
+export type AttendanceClassOption = {
+  school_class_id: number;
+  school_class_name: string;
+  section_id: number;
+  section_name: string;
+  label: string;
+};
+
+export type AttendanceRecordRow = {
+  id: number;
+  student_id: number;
+  student_name: string;
+  roll_number: string;
+  status: string;
+  remark: string;
+};
+
+export type AttendanceSession = {
+  id: number;
+  school_class: number;
+  section: number;
+  class_name: string;
+  section_name: string;
+  date: string;
+  status: 'draft' | 'finalized';
+  notes: string;
+  records: AttendanceRecordRow[];
+};
+
+export const getAttendanceMyClasses = () =>
+  api.get<{ classes: AttendanceClassOption[] }>('/attendance/my-classes/');
+export const getAttendanceSessions = (params?: { date?: string; school_class?: number; section?: number }) =>
+  api.get<AttendanceSession[]>('/attendance/sessions/', { params });
+export const createAttendanceSession = (data: { school_class: number; section: number; date: string }) =>
+  api.post<AttendanceSession>('/attendance/sessions/', data);
+export const getAttendanceSession = (id: number) => api.get<AttendanceSession>(`/attendance/sessions/${id}/`);
+export const updateAttendanceSession = (id: number, data: { records: { student_id: number; status: string; remark?: string }[]; notes?: string }) =>
+  api.patch<AttendanceSession>(`/attendance/sessions/${id}/`, data);
+export const finalizeAttendanceSession = (id: number) =>
+  api.post<AttendanceSession>(`/attendance/sessions/${id}/finalize/`);
+export const reopenAttendanceSession = (id: number) =>
+  api.post<AttendanceSession>(`/attendance/sessions/${id}/reopen/`);
+export const markAllPresentAttendance = (id: number) =>
+  api.post<AttendanceSession>(`/attendance/sessions/${id}/mark-all-present/`);
+export const getAttendanceAssignments = (staffUserId?: number) =>
+  api.get('/attendance/assignments/', { params: staffUserId ? { staff_user: staffUserId } : undefined });
+export const bulkSetAttendanceAssignments = (data: {
+  staff_user_id: number;
+  assignments: { school_class_id: number; section_id: number }[];
+}) => api.post('/attendance/assignments/bulk-set/', data);
+
+export type AttendanceStudentReportRow = {
+  student_id: number;
+  name: string;
+  roll_number: string;
+  present: number;
+  absent: number;
+  late: number;
+  leave: number;
+  half_day: number;
+  session_days: number;
+  presence_pct: number;
+};
+
+export type AttendanceClassReport = {
+  school_class_id: number;
+  school_class_name: string;
+  section_id: number;
+  section_name: string;
+  label: string;
+  session_days: number;
+  student_count: number;
+  average_presence_pct: number;
+  status_totals: Record<string, number>;
+  students: AttendanceStudentReportRow[];
+};
+
+export type AttendanceClassReportResponse = {
+  start_date: string;
+  end_date: string;
+  classes: AttendanceClassReport[];
+};
+
+export type AttendanceStudentHistoryRow = {
+  date: string;
+  status: string;
+  class_name: string;
+  section_name: string;
+  remark: string;
+};
+
+export type AttendanceStudentReportResponse = {
+  student: {
+    id: number;
+    name: string;
+    roll_number: string;
+    class_name: string;
+    section_name: string;
+  };
+  start_date: string;
+  end_date: string;
+  summary: {
+    session_days: number;
+    present_days: number;
+    absent_days: number;
+    late_days: number;
+    leave_days: number;
+    half_day_days: number;
+    presence_pct: number;
+  };
+  records: AttendanceStudentHistoryRow[];
+};
+
+export type ParentAttendanceSummary = {
+  period_start: string;
+  period_end: string;
+  session_days: number;
+  present_days: number;
+  absent_days: number;
+  late_days: number;
+  leave_days: number;
+  half_day_days: number;
+  presence_pct: number;
+  recent_absences: { date: string; status: string; remark: string }[];
+};
+
+export const getAttendanceClassReport = (params?: {
+  start_date?: string;
+  end_date?: string;
+  school_class?: number;
+  section?: number;
+  status?: string;
+}) => api.get<AttendanceClassReportResponse>('/attendance/reports/class/', { params });
+
+export const getAttendanceStudentReport = (
+  studentId: number,
+  params?: { start_date?: string; end_date?: string; status?: string },
+) => api.get<AttendanceStudentReportResponse>(`/attendance/reports/student/${studentId}/`, { params });
+
+export const exportAttendanceReport = (params?: {
+  start_date?: string;
+  end_date?: string;
+  school_class?: number;
+  section?: number;
+  status?: string;
+}) => api.get('/attendance/reports/export/', { params, responseType: 'blob' });
 
 // Schools
 export type SchoolRecord = {
@@ -246,6 +422,56 @@ export const createStudent = (data: object) => api.post('/students/', data);
 export const updateStudent = (id: number, data: object) => api.patch(`/students/${id}/`, data);
 export const deleteStudent = (id: number) => api.delete(`/students/${id}/`);
 export const getStudentFeeHistory = (studentId: number) => api.get(`/students/${studentId}/fee_history/`);
+
+export type PromotionPreviewStudent = {
+  id: number;
+  name: string;
+  roll_number: string;
+  section_id: number | null;
+  section_name: string;
+  will_graduate: boolean;
+};
+
+export type PromotionPreview = {
+  from_class: { id: number; name: string };
+  section: { id: number; name: string } | null;
+  to_class: { id: number; name: string } | null;
+  to_section: { id: number; name: string } | null;
+  academic_year: string;
+  current_academic_year: string;
+  students: PromotionPreviewStudent[];
+  promotable_count: number;
+  graduating_count: number;
+};
+
+export type PromoteStudentsPayload = {
+  school_class_id: number;
+  section_id?: number;
+  student_ids?: number[];
+  exclude_student_ids?: number[];
+  target_class_id?: number;
+  target_section_id?: number;
+  regenerate_roll_numbers?: boolean;
+  academic_year?: string;
+  graduate_inactive?: boolean;
+};
+
+export type PromoteStudentsResult = {
+  message: string;
+  academic_year: string;
+  promoted_count: number;
+  graduated_count: number;
+  skipped_count: number;
+  promoted: { id: number; name: string; from: string; to: string; roll_number: string }[];
+  graduated: { id: number; name: string; reason: string }[];
+  skipped: { id: number; name: string; reason: string }[];
+};
+
+export const getPromotionPreview = (params: { class: number; section?: number; academic_year?: string }) =>
+  api.get<PromotionPreview>('/students/promotion-preview/', { params });
+
+export const promoteStudents = (data: PromoteStudentsPayload) =>
+  api.post<PromoteStudentsResult>('/students/promote/', data);
 
 // Admission enquiries
 export const getEnquiries = (params?: {

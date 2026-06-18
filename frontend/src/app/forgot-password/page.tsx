@@ -34,7 +34,11 @@ export default function ForgotPasswordPage() {
       <div className="auth-surface w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
         <h1 className="mb-2 text-xl font-semibold text-gray-900">Forgot password</h1>
         <p className="mb-6 text-sm text-gray-600">
-          School owners: enter your registered email. Staff: enter your username.
+          School owners: enter your registered email. Staff: use{' '}
+          <Link href="/login/staff" className="font-medium text-teal-600 hover:underline">
+            staff sign in
+          </Link>{' '}
+          with school code and username.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

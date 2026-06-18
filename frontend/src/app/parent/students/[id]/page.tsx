@@ -19,6 +19,7 @@ import {
   StudentProfileOverview,
   StudentPaymentsSection,
   StudentResultsSection,
+  StudentAttendanceSection,
   computeFeeSummary,
   downloadParentChildReceipt,
   downloadParentChildMonthReceipt,
@@ -100,7 +101,7 @@ export default function ParentStudentProfilePage() {
     );
   }
 
-  const { student, admission_date, yearly_payments = [], monthly_history, published_results = [], allow_parent_online_payment = false } = data;
+  const { student, admission_date, yearly_payments = [], monthly_history, published_results = [], allow_parent_online_payment = false, attendance_summary } = data;
   const feeSummary = computeFeeSummary(data);
   const showPayButton = allow_parent_online_payment && feeSummary.totalPending > 0;
 
@@ -162,6 +163,8 @@ export default function ParentStudentProfilePage() {
           fetchExamReport={(examId, studentId) => getParentStudentExamReport(studentId, examId)}
           onOpenExam={(examId, examName) => setSelectedExam({ id: examId, name: examName })}
         />
+
+        <StudentAttendanceSection summary={attendance_summary} />
 
         <StudentResultsSection
           results={published_results}

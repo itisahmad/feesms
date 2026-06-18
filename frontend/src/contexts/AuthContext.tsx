@@ -8,6 +8,7 @@ interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   login: (loginId: string, password: string) => Promise<void>;
+  staffLogin: (schoolCode: string, username: string, password: string) => Promise<void>;
   parentLogin: (schoolCode: string, phone: string, password: string) => Promise<void>;
   parentRegister: (data: {
     school_code: string;
@@ -37,6 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = useAuthStore((s: AuthState) => s.refreshUser);
   const initializeAuth = useAuthStore((s: AuthState) => s.initializeAuth);
   const loginToStore = useAuthStore((s: AuthState) => s.login);
+  const staffLoginToStore = useAuthStore((s: AuthState) => s.staffLogin);
   const parentLoginToStore = useAuthStore((s: AuthState) => s.parentLogin);
   const parentRegisterToStore = useAuthStore((s: AuthState) => s.parentRegister);
   const parentResetPasswordToStore = useAuthStore((s: AuthState) => s.parentResetPassword);
@@ -50,6 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (loginId: string, password: string) => {
     await loginToStore(loginId, password);
+    router.push('/dashboard');
+  };
+
+  const staffLogin = async (schoolCode: string, username: string, password: string) => {
+    await staffLoginToStore(schoolCode, username, password);
     router.push('/dashboard');
   };
 
@@ -86,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, parentLogin, parentRegister, parentResetPassword, logout, setUser, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, staffLogin, parentLogin, parentRegister, parentResetPassword, logout, setUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

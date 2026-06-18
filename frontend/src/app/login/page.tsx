@@ -9,7 +9,7 @@ const inputClass =
   'w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-500 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/25';
 
 export default function LoginPage() {
-  const [loginId, setLoginId] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,10 +25,10 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(loginId.trim(), password);
+      await login(email.trim(), password);
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: { detail?: string } } };
-      setError(axErr?.response?.data?.detail || 'Invalid email/username or password');
+      setError(axErr?.response?.data?.detail || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
@@ -42,27 +42,27 @@ export default function LoginPage() {
           <p className="mt-1 text-gray-600">Fee Management for Bihar Schools</p>
         </div>
         <div className="auth-surface rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
-          <h2 className="mb-6 text-xl font-semibold text-gray-900">Sign in</h2>
+          <h2 className="mb-6 text-xl font-semibold text-gray-900">School owner sign in</h2>
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
               <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>
             )}
             <div>
-              <label htmlFor="loginId" className={labelClass}>
-                Email or username
+              <label htmlFor="email" className={labelClass}>
+                Email
               </label>
               <input
-                id="loginId"
-                type="text"
-                autoComplete="username"
-                value={loginId}
-                onChange={(e) => setLoginId(e.target.value)}
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className={inputClass}
-                placeholder="School owner: your email · Staff: username"
+                placeholder="Your registered email"
                 required
               />
               <p className="mt-1.5 text-xs text-gray-500">
-                School owners use the email from registration. Staff use the username created by the owner.
+                Use the email address from school registration.
               </p>
             </div>
             <div>
@@ -100,6 +100,12 @@ export default function LoginPage() {
             Don&apos;t have an account?{' '}
             <Link href="/register" className="font-medium text-teal-600 hover:underline">
               Register your school
+            </Link>
+          </p>
+          <p className="mt-3 text-center text-sm text-gray-600">
+            School staff?{' '}
+            <Link href="/login/staff" className="font-medium text-teal-600 hover:underline">
+              Sign in as school staff
             </Link>
           </p>
           <p className="mt-3 text-center text-sm text-gray-600">

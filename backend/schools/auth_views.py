@@ -8,7 +8,7 @@ from .default_fee_types import ensure_default_fee_types_for_school
 
 
 class SchoolTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Owners: email + password. Staff: username + password."""
+    """Owners: email + password only."""
 
     login = serializers.CharField()
 

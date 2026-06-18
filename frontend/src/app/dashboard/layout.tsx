@@ -14,6 +14,7 @@ import {
   Receipt,
   ClipboardCheck,
   Megaphone,
+  CalendarCheck,
   Settings,
   UserCog,
   LogOut,
@@ -41,6 +42,7 @@ const nav = [
   { href: '/dashboard/receipt-templates', label: 'Receipt Templates', icon: Receipt, moduleKey: 'receipt_templates' },
   { href: '/dashboard/results', label: 'Results', icon: ClipboardCheck, moduleKey: 'results' },
   { href: '/dashboard/announcements', label: 'Announcements', icon: Megaphone, moduleKey: 'announcements' },
+  { href: '/dashboard/attendance', label: 'Attendance', icon: CalendarCheck, moduleKey: 'attendance' },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings, moduleKey: 'settings' },
 ];
 

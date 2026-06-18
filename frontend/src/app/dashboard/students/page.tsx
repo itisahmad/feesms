@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Users, Plus, Search, Info, ShieldCheck } from 'lucide-react';
+import { Users, Plus, Search, Info, ShieldCheck, ArrowUpRight } from 'lucide-react';
 import { getStudents, createStudent, updateStudent, getClasses, getFeeStructures, getStudentFeeHistory, getSchool } from '@/lib/api';
 import { ParentPhoneVerifyModal } from '@/components/dashboard/parent-phone-verify-modal';
+import { StudentPromotionModal } from '@/components/dashboard/student-promotion-modal';
 import { DashboardSelect } from '@/components/dashboard/dashboard-select';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
@@ -50,6 +51,54 @@ interface Student {
   admission_number: string;
   roll_number: string;
 }
+
+interface StudentGroup {
+  key: string;
+  classId: number;
+  className: string;
+  sectionId: number | null;
+  sectionName: string;
+  displayOrder: number;
+  students: Student[];
+}
+
+type PromotionTarget = {
+  classId: number;
+  className: string;
+  sectionId?: number;
+  sectionName?: string;
+  studentIds?: number[];
+};
+
+const buildStudentGroups = (students: Student[], classes: SchoolClass[]): StudentGroup[] => {
+  const classOrder = new Map(classes.map((c) => [c.id, c.display_order]));
+  const classNames = new Map(classes.map((c) => [c.id, c.name]));
+  const groups = new Map<string, StudentGroup>();
+
+  for (const student of students) {
+    const classId = student.school_class ?? 0;
+    const sectionId = student.section ?? 0;
+    const key = `${classId}-${sectionId}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        classId,
+        className: classNames.get(classId) || student.class_name.split('-')[0] || 'Unassigned',
+        sectionId: student.section,
+        sectionName: student.section_name || '',
+        displayOrder: classOrder.get(classId) ?? 999,
+        students: [],
+      });
+    }
+    groups.get(key)!.students.push(student);
+  }
+
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+    if (a.className !== b.className) return a.className.localeCompare(b.className);
+    return a.sectionName.localeCompare(b.sectionName);
+  });
+};
 
 const getTodayDate = () => new Date().toISOString().slice(0, 10);
 
@@ -111,6 +160,9 @@ export default function StudentsPage() {
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
   const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
   const [originalParentPhone, setOriginalParentPhone] = useState('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<number>>(new Set());
+  const [promotionTarget, setPromotionTarget] = useState<PromotionTarget | null>(null);
+  const [promotionNotice, setPromotionNotice] = useState('');
 
   const normalizedFormPhone = normalizeParentPhone(form.parent_phone);
   const parentPhoneUnchanged = Boolean(
@@ -167,16 +219,56 @@ export default function StudentsPage() {
   useEffect(() => {
     if (!classFilter) {
       setSectionFilter('');
-    } else {
-      const sc = classes.find((c) => c.id === parseInt(classFilter));
-      const secs = sc?.sections || [];
-      if (secs.length > 0) {
-        setSectionFilter(secs[0].id.toString());
-      } else {
-        setSectionFilter('');
-      }
     }
-  }, [classFilter, classes]);
+  }, [classFilter]);
+
+  const studentGroups = buildStudentGroups(students, classes);
+  const selectedCount = selectedStudentIds.size;
+
+  const toggleStudentSelection = (id: number) => {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGroupSelection = (group: StudentGroup, checked: boolean) => {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      group.students.forEach((s) => {
+        if (checked) next.add(s.id);
+        else next.delete(s.id);
+      });
+      return next;
+    });
+  };
+
+  const openPromotion = (target: PromotionTarget) => {
+    setPromotionTarget(target);
+    setPromotionNotice('');
+  };
+
+  const openPromotionForSelection = () => {
+    const selected = students.filter((s) => selectedStudentIds.has(s.id));
+    if (selected.length === 0) return;
+    const classIds = new Set(selected.map((s) => s.school_class).filter(Boolean));
+    if (classIds.size !== 1) {
+      setPromotionNotice('Select students from one class at a time to promote.');
+      return;
+    }
+    const classId = selected[0].school_class!;
+    const className = classes.find((c) => c.id === classId)?.name || selected[0].class_name.split('-')[0];
+    const sectionIds = new Set(selected.map((s) => s.section).filter(Boolean));
+    openPromotion({
+      classId,
+      className,
+      sectionId: sectionIds.size === 1 ? (selected[0].section ?? undefined) : undefined,
+      sectionName: sectionIds.size === 1 ? (selected[0].section_name || undefined) : undefined,
+      studentIds: selected.map((s) => s.id),
+    });
+  };
 
   useEffect(() => {
     const sc = classes.find((c) => c.id === parseInt(form.school_class || '0'));
@@ -357,7 +449,7 @@ export default function StudentsPage() {
         icon={Users}
         eyebrow="Roster"
         title="Students"
-        subtitle="Select a class first, then a section. Add classes and sections under Classes before enrolling students."
+        subtitle="Students are grouped by class and section. Promote a full class or pick individuals to leave behind."
         actions={
           <Button
             onClick={() => {
@@ -676,53 +768,140 @@ export default function StudentsPage() {
             disabled={!classFilter}
             options={filterSections.map((s) => ({ value: String(s.id), label: s.name }))}
           />
+          {selectedCount > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={openPromotionForSelection}
+              className="rounded-xl border-teal-500/30 bg-teal-500/10 text-teal-200 hover:bg-teal-500/20"
+            >
+              <ArrowUpRight className="mr-1.5 h-4 w-4" />
+              Promote {selectedCount} selected
+            </Button>
+          ) : null}
         </div>
+
+        {promotionNotice ? (
+          <p className="border-b border-white/10 px-6 py-3 text-sm text-amber-300">{promotionNotice}</p>
+        ) : null}
 
         {loading ? (
           <InlineLoading />
         ) : students.length === 0 ? (
           <p className={dash.empty}>No students yet. Add your first student above.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className={dash.table}>
-              <thead className={dash.thead}>
-                <tr>
-                  <th className={dash.th}>Name</th>
-                  <th className={dash.th}>Class</th>
-                  <th className={dash.th}>Parent</th>
-                  <th className={dash.th}>Phone</th>
-                  <th className={cn(dash.th, 'text-right')}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {students.map((s, i) => (
-                  <motion.tr
-                    key={s.id}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.12 + i * 0.04 }}
-                    className={dash.tr}
-                  >
-                    <td className={cn(dash.td, 'font-medium')}>
-                      <Link href={`/dashboard/students/${s.id}`} className={dash.link}>
-                        {s.name}
-                      </Link>
-                    </td>
-                    <td className={dash.td}>{s.class_name}</td>
-                    <td className={dash.td}>{s.parent_name}</td>
-                    <td className={dash.td}>{s.parent_phone}</td>
-                    <td className={cn(dash.td, 'text-right')}>
-                      <button type="button" onClick={() => handleEdit(s.id)} className={dash.link}>
-                        Edit
-                      </button>
-                    </td>
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-white/10">
+            {studentGroups.map((group) => {
+              const groupLabel = group.sectionName
+                ? `${group.className} · Section ${group.sectionName}`
+                : group.className;
+              const allSelected = group.students.every((s) => selectedStudentIds.has(s.id));
+              const someSelected = group.students.some((s) => selectedStudentIds.has(s.id));
+              return (
+                <div key={group.key}>
+                  <div className="flex flex-col gap-3 border-b border-white/5 bg-white/[0.02] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={allSelected && group.students.length > 0}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someSelected && !allSelected;
+                        }}
+                        onChange={(e) => toggleGroupSelection(group, e.target.checked)}
+                        className="rounded border-white/20 bg-white/5"
+                        aria-label={`Select all in ${groupLabel}`}
+                      />
+                      <div>
+                        <h3 className="font-semibold text-slate-100">{groupLabel}</h3>
+                        <p className="text-xs text-slate-500">{group.students.length} student{group.students.length === 1 ? '' : 's'}</p>
+                      </div>
+                    </div>
+                    {group.classId > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          openPromotion({
+                            classId: group.classId,
+                            className: group.className,
+                            sectionId: group.sectionId ?? undefined,
+                            sectionName: group.sectionName || undefined,
+                          })
+                        }
+                        className="rounded-xl border-white/15 bg-white/5 text-slate-200"
+                      >
+                        <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
+                        Promote class
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className={dash.table}>
+                      <thead className={dash.thead}>
+                        <tr>
+                          <th className={cn(dash.th, 'w-10')} />
+                          <th className={dash.th}>Name</th>
+                          <th className={dash.th}>Roll</th>
+                          <th className={dash.th}>Parent</th>
+                          <th className={dash.th}>Phone</th>
+                          <th className={cn(dash.th, 'text-right')}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.students.map((s, i) => (
+                          <motion.tr
+                            key={s.id}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.06 + i * 0.03 }}
+                            className={dash.tr}
+                          >
+                            <td className={dash.td}>
+                              <input
+                                type="checkbox"
+                                checked={selectedStudentIds.has(s.id)}
+                                onChange={() => toggleStudentSelection(s.id)}
+                                className="rounded border-white/20 bg-white/5"
+                                aria-label={`Select ${s.name}`}
+                              />
+                            </td>
+                            <td className={cn(dash.td, 'font-medium')}>
+                              <Link href={`/dashboard/students/${s.id}`} className={dash.link}>
+                                {s.name}
+                              </Link>
+                            </td>
+                            <td className={dash.td}>{s.roll_number || '—'}</td>
+                            <td className={dash.td}>{s.parent_name}</td>
+                            <td className={dash.td}>{s.parent_phone}</td>
+                            <td className={cn(dash.td, 'text-right')}>
+                              <button type="button" onClick={() => handleEdit(s.id)} className={dash.link}>
+                                Edit
+                              </button>
+                            </td>
+                          </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </GlassCard>
+
+      {promotionTarget ? (
+        <StudentPromotionModal
+          target={promotionTarget}
+          onClose={() => setPromotionTarget(null)}
+          onSuccess={(result) => {
+            setSelectedStudentIds(new Set());
+            setPromotionNotice(result.message);
+            loadStudents();
+          }}
+        />
+      ) : null}
     </PageShell>
   );
 }

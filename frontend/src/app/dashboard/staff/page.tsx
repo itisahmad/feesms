@@ -5,15 +5,22 @@ import { motion } from 'framer-motion';
 import { UserCog, Plus, KeyRound, Shield } from 'lucide-react';
 import {
   createStaffUser,
+  createStaffRole,
   deleteStaffUser,
+  deleteStaffRole,
   forgotPassword,
+  getStaffRoles,
   getStaffUsers,
   updateStaffUser,
+  updateStaffRole,
+  type StaffRole,
 } from '@/lib/api';
+import { TeacherClassAssignmentsModal } from '@/components/attendance/teacher-class-assignments';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { PageShell, GlassCard } from '@/components/dashboard/page-shell';
 import { InlineLoading } from '@/components/dashboard/loading-state';
 import { DashboardModal } from '@/components/dashboard/modal';
+import { StaffRolePicker } from '@/components/dashboard/staff-role-picker';
 import { StaffPermissionMatrix } from '@/components/dashboard/staff-permission-matrix';
 import { Button } from '@/components/ui/button';
 import { dash } from '@/lib/dashboard-ui';
@@ -34,6 +41,8 @@ interface StaffUser {
   phone: string;
   role: 'owner' | 'accountant' | 'staff';
   is_active: boolean;
+  staff_role?: number | null;
+  staff_role_name?: string | null;
   module_permissions?: ModulePermissions;
 }
 
@@ -44,25 +53,43 @@ const initialForm = () => ({
   phone: '',
   password: '',
   password2: '',
+  staff_role: '',
 });
 
+
 export default function StaffPage() {
+  const [tab, setTab] = useState<'users' | 'roles'>('users');
   const [staff, setStaff] = useState<StaffUser[]>([]);
+  const [roles, setRoles] = useState<StaffRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [modulePermissions, setModulePermissions] = useState<ModulePermissions>(emptyModulePermissions);
   const [editingUser, setEditingUser] = useState<StaffUser | null>(null);
   const [editPermissions, setEditPermissions] = useState<ModulePermissions>(emptyModulePermissions);
+  const [assignUser, setAssignUser] = useState<StaffUser | null>(null);
+  const [roleForm, setRoleForm] = useState({ name: '', description: '' });
+  const [editingRole, setEditingRole] = useState<StaffRole | null>(null);
+  const [editRoleForm, setEditRoleForm] = useState({ name: '', description: '' });
+  const [showQuickAddRole, setShowQuickAddRole] = useState(false);
+  const [quickRoleForm, setQuickRoleForm] = useState({ name: '', description: '' });
 
   const loadStaff = async () => {
     const { data } = await getStaffUsers();
     setStaff(data.results || data);
   };
 
+  const loadRoles = async () => {
+    const { data } = await getStaffRoles();
+    setRoles(data.results || data);
+  };
+
   useEffect(() => {
-    loadStaff()
-      .catch(() => setStaff([]))
+    Promise.all([loadStaff(), loadRoles()])
+      .catch(() => {
+        setStaff([]);
+        setRoles([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -77,6 +104,7 @@ export default function StaffPage() {
     try {
       await createStaffUser({
         ...form,
+        staff_role: form.staff_role ? parseInt(form.staff_role) : undefined,
         module_permissions: normalizeModulePermissions(modulePermissions),
       });
       await loadStaff();
@@ -89,6 +117,99 @@ export default function StaffPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCreateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roleForm.name.trim()) return;
+    setSaving(true);
+    try {
+      await createStaffRole({
+        name: roleForm.name.trim(),
+        description: roleForm.description,
+      });
+      await loadRoles();
+      setRoleForm({ name: '', description: '' });
+      alert('Role created');
+    } catch {
+      alert('Failed to create role');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveRole = async () => {
+    if (!editingRole) return;
+    if (!editRoleForm.name.trim()) {
+      alert('Role name is required.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateStaffRole(editingRole.id, {
+        name: editRoleForm.name.trim(),
+        description: editRoleForm.description,
+      });
+      await loadRoles();
+      setEditingRole(null);
+    } catch {
+      alert('Failed to update role');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteRole = async (role: StaffRole) => {
+    if (!confirm(`Delete role "${role.name}"?`)) return;
+    setSaving(true);
+    try {
+      await deleteStaffRole(role.id);
+      await loadRoles();
+      if (form.staff_role === String(role.id)) {
+        setForm((f) => ({ ...f, staff_role: '' }));
+      }
+    } catch {
+      alert('Cannot delete role — remove it from staff first.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStaffRoleChange = (value: string) => {
+    setForm((f) => ({ ...f, staff_role: value }));
+  };
+
+  const openQuickAddRole = () => {
+    setQuickRoleForm({ name: '', description: '' });
+    setShowQuickAddRole(true);
+  };
+
+  const handleQuickAddRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickRoleForm.name.trim()) {
+      alert('Enter a role name.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data: created } = await createStaffRole({
+        name: quickRoleForm.name.trim(),
+        description: quickRoleForm.description,
+      });
+      await loadRoles();
+      setForm((f) => ({ ...f, staff_role: String(created.id) }));
+      setShowQuickAddRole(false);
+      setQuickRoleForm({ name: '', description: '' });
+    } catch {
+      alert('Failed to create role');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEditRole = (role: StaffRole) => {
+    setEditingRole(role);
+    setEditRoleForm({ name: role.name, description: role.description || '' });
   };
 
   const openEditPermissions = (user: StaffUser) => {
@@ -175,14 +296,98 @@ export default function StaffPage() {
         eyebrow="Access control"
         title="Staff"
         highlight="Logins"
-        subtitle="Create staff logins and assign module permissions (view, create, edit, delete, actions). Access is controlled only by the permission matrix below."
+        subtitle="Roles label staff (e.g. Teacher). Module permissions are set per staff login."
       />
 
+      <div className="mb-4 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setTab('users')}
+          className={cn(
+            'rounded-xl px-4 py-2 text-sm font-medium transition',
+            tab === 'users' ? 'bg-teal-500/20 text-teal-200' : 'text-slate-400 hover:bg-white/5',
+          )}
+        >
+          Staff users
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('roles')}
+          className={cn(
+            'rounded-xl px-4 py-2 text-sm font-medium transition',
+            tab === 'roles' ? 'bg-teal-500/20 text-teal-200' : 'text-slate-400 hover:bg-white/5',
+          )}
+        >
+          Roles
+        </button>
+      </div>
+
+      {tab === 'roles' ? (
+        <>
+          <GlassCard delay={0.05}>
+            <div className="border-b border-white/10 px-6 py-4">
+              <h2 className={dash.sectionTitle}>Add role</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                A label only — e.g. Teacher, Clerk. Does not control access; set permissions on each staff login.
+              </p>
+            </div>
+            <form onSubmit={handleCreateRole} className="space-y-4 p-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <input
+                  value={roleForm.name}
+                  onChange={(e) => setRoleForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Role name (e.g. Teacher)"
+                  className={dash.field}
+                  required
+                />
+                <input
+                  value={roleForm.description}
+                  onChange={(e) => setRoleForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Short description"
+                  className={dash.field}
+                />
+              </div>
+              <Button type="submit" disabled={saving} className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 border-0">
+                Create role
+              </Button>
+            </form>
+          </GlassCard>
+          <GlassCard delay={0.1} className="mt-6">
+            {roles.length === 0 ? (
+              <p className={dash.empty}>No roles yet.</p>
+            ) : (
+              <div className="divide-y divide-white/10">
+                {roles.map((role) => (
+                  <div key={role.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+                    <div>
+                      <p className="font-medium text-slate-100">{role.name}</p>
+                      <p className="text-xs text-slate-500">{role.description || role.slug}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className={dash.link}
+                        onClick={() => openEditRole(role)}
+                      >
+                        Edit
+                      </button>
+                      <button type="button" className={dash.linkDanger} onClick={() => handleDeleteRole(role)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+        </>
+      ) : (
+        <>
       <GlassCard delay={0.05}>
         <div className="border-b border-white/10 px-6 py-4">
           <h2 className={dash.sectionTitle}>Add staff login</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Staff sign in with <span className="text-slate-300">username + password</span> only (not email). Set permissions below.
+            Staff sign in at <span className="text-slate-300">/login/staff</span> with school code + username.
           </p>
         </div>
         <form onSubmit={handleCreate} className="space-y-6 p-6">
@@ -194,6 +399,13 @@ export default function StaffPage() {
               className={dash.field}
               autoComplete="off"
               required
+            />
+            <StaffRolePicker
+              roles={roles}
+              value={form.staff_role}
+              onChange={handleStaffRoleChange}
+              onAddRole={openQuickAddRole}
+              onDeleteRole={handleDeleteRole}
             />
             <input
               value={form.first_name}
@@ -233,6 +445,9 @@ export default function StaffPage() {
 
           <div>
             <h3 className="mb-2 text-sm font-semibold text-slate-300">Module permissions</h3>
+            <p className="mb-3 text-xs text-slate-500">
+              Role above is only a label. Set what this staff member can access here.
+            </p>
             <StaffPermissionMatrix value={modulePermissions} onChange={setModulePermissions} />
           </div>
 
@@ -259,6 +474,7 @@ export default function StaffPage() {
                 <tr>
                   <th className={dash.th}>Username</th>
                   <th className={dash.th}>Name</th>
+                  <th className={dash.th}>Role</th>
                   <th className={dash.th}>Modules</th>
                   <th className={dash.th}>Status</th>
                   <th className={dash.th}>Actions</th>
@@ -277,6 +493,7 @@ export default function StaffPage() {
                     <td className={dash.td}>
                       {u.first_name} {u.last_name}
                     </td>
+                    <td className={dash.td}>{u.staff_role_name || '—'}</td>
                     <td className={cn(dash.td, 'max-w-xs text-xs text-slate-400')}>
                       {summarizeModules(u.module_permissions)}
                     </td>
@@ -287,6 +504,13 @@ export default function StaffPage() {
                     </td>
                     <td className={dash.td}>
                       <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setAssignUser(u)}
+                          className={dash.link}
+                        >
+                          Assign classes
+                        </button>
                         <button
                           type="button"
                           onClick={() => openEditPermissions(u)}
@@ -345,6 +569,101 @@ export default function StaffPage() {
             </Button>
           </div>
         </DashboardModal>
+      )}
+
+      {editingRole && (
+        <DashboardModal
+          title={`Edit role — ${editingRole.name}`}
+          subtitle="Role name is for your records only. Staff access is set per login."
+          onClose={() => setEditingRole(null)}
+        >
+          <div className="space-y-4">
+            <input
+              value={editRoleForm.name}
+              onChange={(e) => setEditRoleForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Role name"
+              className={dash.field}
+              required
+            />
+            <input
+              value={editRoleForm.description}
+              onChange={(e) => setEditRoleForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Short description"
+              className={dash.field}
+            />
+          </div>
+          <div className="mt-6 flex gap-2">
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={handleSaveRole}
+              className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingRole(null)}
+              className="rounded-xl border-white/10 bg-white/5 text-slate-300"
+            >
+              Cancel
+            </Button>
+          </div>
+        </DashboardModal>
+      )}
+
+      {assignUser && (
+        <TeacherClassAssignmentsModal
+          staffUserId={assignUser.id}
+          staffLabel={assignUser.username}
+          onClose={() => setAssignUser(null)}
+          onSaved={() => setAssignUser(null)}
+        />
+      )}
+
+      {showQuickAddRole && (
+        <DashboardModal
+          title="Add role"
+          subtitle="Label for this staff member's job (e.g. Teacher). Does not set permissions."
+          onClose={() => setShowQuickAddRole(false)}
+        >
+          <form onSubmit={handleQuickAddRole} className="space-y-4">
+            <input
+              value={quickRoleForm.name}
+              onChange={(e) => setQuickRoleForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Role name (e.g. Teacher, Clerk)"
+              className={dash.field}
+              required
+              autoFocus
+            />
+            <input
+              value={quickRoleForm.description}
+              onChange={(e) => setQuickRoleForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Short description (optional)"
+              className={dash.field}
+            />
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                disabled={saving}
+                className="rounded-xl border-0 bg-gradient-to-r from-teal-500 to-cyan-500"
+              >
+                {saving ? 'Saving…' : 'Save role'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowQuickAddRole(false)}
+                className="rounded-xl border-white/10 bg-white/5 text-slate-300"
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </DashboardModal>
+      )}
+        </>
       )}
     </PageShell>
   );

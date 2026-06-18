@@ -16,3 +16,4 @@ export { StudentProfileOverview } from './student-profile-overview';
 export { StudentFeesSection } from './student-fees-section';
 export { StudentPaymentsSection } from './student-payments-section';
 export { StudentResultsSection, StudentPerformanceSection } from './student-results-section';
+export { StudentAttendanceSection } from './student-attendance-section';

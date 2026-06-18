@@ -32,6 +32,7 @@ urlpatterns = [
     path('api/receipts/', include('receipts.urls')),
     path('api/results/', include('results.urls')),
     path('api/announcements/', include('announcements.urls')),
+    path('api/attendance/', include('attendance.urls')),
     path('api/', include('schools.urls')),
 ]
 if settings.DEBUG:

@@ -14,13 +14,14 @@ from datetime import datetime
 from decimal import Decimal
 from django.utils.encoding import force_bytes, force_str
 
-from ..models import (User, School, SchoolClass, Section, Student, FeeType, FeeStructure, 
+from ..models import (User, School, SchoolStaffRole, SchoolClass, Section, Student, FeeType, FeeStructure,
                      StudentFeeStructureChoice, StudentFee, FeePayment,
                      ExpenseCategory, Vendor, Expense, Budget)
 from ..messaging import send_sms_message, send_whatsapp_message
 from ..serializers import (
     UserSerializer, RegisterSerializer, SchoolSerializer, SchoolClassSerializer, SectionSerializer,
     StaffUserCreateSerializer, StaffUserUpdateSerializer, ForgotPasswordSerializer, ResetPasswordSerializer,
+    SchoolStaffRoleSerializer,
     StudentSerializer, FeeTypeSerializer, FeeStructureSerializer,
     StudentFeeSerializer, StudentFeeCreateSerializer, FeePaymentSerializer,
     ExpenseCategorySerializer, VendorSerializer, ExpenseSerializer, BudgetSerializer, ExpenseReportSerializer
@@ -79,7 +80,12 @@ class StaffUserViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
         school = self.get_user_school()
         if not school:
             return User.objects.none()
-        return User.objects.filter(school=school).exclude(role__in=['owner', 'parent']).order_by('username')
+        return User.objects.filter(school=school).exclude(role__in=['owner', 'parent']).select_related('staff_role').order_by('username')
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['school'] = self.get_user_school()
+        return ctx
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -126,6 +132,63 @@ class StaffUserViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
             {
                 "modules": MODULE_DEFINITIONS,
                 "permission_keys": list(PERMISSION_KEYS),
+            }
+        )
+
+
+class SchoolStaffRoleViewSet(SchoolScopedMixin, viewsets.ModelViewSet):
+    serializer_class = SchoolStaffRoleSerializer
+    permission_classes = [permissions.IsAuthenticated, IsSchoolOwner]
+
+    def get_queryset(self):
+        school = self.get_user_school()
+        if not school:
+            return SchoolStaffRole.objects.none()
+        return SchoolStaffRole.objects.filter(school=school).order_by('name')
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['school'] = self.get_user_school()
+        return ctx
+
+    def list(self, request, *args, **kwargs):
+        school = self.get_user_school()
+        if school and not SchoolStaffRole.objects.filter(school=school).exists():
+            from ..staff_roles import seed_default_staff_roles
+            seed_default_staff_roles(school)
+        return super().list(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import ValidationError
+        if instance.users.exists():
+            raise ValidationError('Remove this role from staff users before deleting.')
+        instance.delete()
+
+
+class StaffLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        from ..default_fee_types import ensure_default_fee_types_for_school
+        from ..staff_auth import resolve_staff_for_login
+
+        school_code = request.data.get("school_code", "")
+        username = request.data.get("username", "")
+        password = request.data.get("password", "")
+
+        user, err = resolve_staff_for_login(school_code, username, password)
+        if err:
+            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+
+        ensure_default_fee_types_for_school(user.school)
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "role": user.role,
             }
         )
 

@@ -37,13 +37,9 @@ def resolve_user_for_login(login: str, password: str):
         if not user:
             return None, "Invalid email or password."
         if user.role != "owner":
-            return None, "Staff accounts must sign in with username, not email."
+            return None, "Staff accounts must sign in with school code and username on the staff login page."
     else:
-        user = User.objects.filter(username__iexact=login).first()
-        if not user:
-            return None, "Invalid username or password."
-        if user.role == "owner":
-            return None, "School owners must sign in with email."
+        return None, "School owners must sign in with email. Staff use the staff login page with school code."
 
     if not user.is_active:
         return None, "This account is disabled."

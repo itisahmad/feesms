@@ -30,6 +30,13 @@ class User(AbstractUser):
         blank=True,
         help_text="Per-module access for staff: view, create, edit, delete, actions.",
     )
+    staff_role = models.ForeignKey(
+        'SchoolStaffRole',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users',
+    )
 
     class Meta(AbstractUser.Meta):
         constraints = [
@@ -39,6 +46,24 @@ class User(AbstractUser):
                 name='uniq_parent_school_phone',
             ),
         ]
+
+
+class SchoolStaffRole(models.Model):
+    """Staff role label for the school (e.g. Teacher, Clerk) — identification only, not permissions."""
+    school = models.ForeignKey('School', on_delete=models.CASCADE, related_name='staff_roles')
+    name = models.CharField(max_length=80)
+    slug = models.CharField(max_length=80)
+    description = models.TextField(blank=True)
+    module_permissions = models.JSONField(default=dict, blank=True)
+    is_system = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        unique_together = [['school', 'name'], ['school', 'slug']]
+
+    def __str__(self):
+        return f"{self.school.name} — {self.name}"
 
 
 class School(models.Model):

@@ -118,8 +118,8 @@ export default function ParentLoginPage() {
           </p>
           <p className="mt-3 text-center text-sm text-gray-600">
             School staff?{' '}
-            <Link href="/login" className="font-medium text-teal-600 hover:underline">
-              Staff login
+            <Link href="/login/staff" className="font-medium text-teal-600 hover:underline">
+              Sign in as school staff
             </Link>
           </p>
         </div>

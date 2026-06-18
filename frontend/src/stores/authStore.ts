@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { getMe, login as apiLogin, parentLogin as apiParentLogin, parentRegister as apiParentRegister, parentResetPassword as apiParentResetPassword } from '@/lib/api';
+import { getMe, login as apiLogin, staffLogin as apiStaffLogin, parentLogin as apiParentLogin, parentRegister as apiParentRegister, parentResetPassword as apiParentResetPassword } from '@/lib/api';
 import type { ModulePermissions } from '@/lib/staff-modules';
 
 export interface AuthUser {
@@ -30,6 +30,7 @@ export interface AuthState {
   refreshUser: () => Promise<AuthUser | null>;
   initializeAuth: () => Promise<void>;
   login: (loginId: string, password: string) => Promise<void>;
+  staffLogin: (schoolCode: string, username: string, password: string) => Promise<void>;
   parentLogin: (schoolCode: string, phone: string, password: string) => Promise<void>;
   parentRegister: (data: {
     school_code: string;
@@ -95,6 +96,16 @@ export const useAuthStore = create<AuthState>((set: (partial: Partial<AuthState>
 
   login: async (loginId: string, password: string) => {
     const { data } = await apiLogin(loginId, password);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('access', data.access);
+      localStorage.setItem('refresh', data.refresh);
+    }
+    const { data: userData } = await getMe();
+    set({ user: userData });
+  },
+
+  staffLogin: async (schoolCode: string, username: string, password: string) => {
+    const { data } = await apiStaffLogin(schoolCode.trim(), username.trim(), password);
     if (typeof window !== 'undefined') {
       localStorage.setItem('access', data.access);
       localStorage.setItem('refresh', data.refresh);

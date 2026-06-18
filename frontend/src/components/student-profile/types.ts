@@ -1,4 +1,4 @@
-import type { StudentPublishedResultSummary } from '@/lib/api';
+import type { StudentPublishedResultSummary, ParentAttendanceSummary } from '@/lib/api';
 
 export type StudentProfileStudent = {
   id: number;
@@ -90,4 +90,5 @@ export type { StudentPublishedResultSummary };
 export type ParentChildProfile = StudentFeeHistoryData & {
   allow_parent_online_payment?: boolean;
   published_results: StudentPublishedResultSummary[];
+  attendance_summary?: ParentAttendanceSummary | null;
 };

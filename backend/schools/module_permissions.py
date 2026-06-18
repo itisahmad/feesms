@@ -19,6 +19,7 @@ MODULE_DEFINITIONS = [
     {"key": "receipt_templates", "label": "Receipt Templates", "path": "/dashboard/receipt-templates"},
     {"key": "results", "label": "Results", "path": "/dashboard/results"},
     {"key": "announcements", "label": "Announcements", "path": "/dashboard/announcements"},
+    {"key": "attendance", "label": "Attendance", "path": "/dashboard/attendance"},
     {"key": "settings", "label": "Settings", "path": "/dashboard/settings"},
 ]
 
@@ -59,11 +60,21 @@ def normalize_module_permissions(raw) -> dict:
     return base
 
 
+def merge_permission_dicts(base: dict, overlay: dict) -> dict:
+    result = deepcopy(base)
+    for module_key in MODULE_KEYS:
+        if module_key in OWNER_ONLY_MODULE_KEYS:
+            continue
+        for perm in PERMISSION_KEYS:
+            if overlay.get(module_key, {}).get(perm):
+                result[module_key][perm] = True
+    return result
+
+
 def user_module_permissions(user) -> dict:
     if is_owner(user):
         return full_permissions()
-    stored = getattr(user, "module_permissions", None) or {}
-    return normalize_module_permissions(stored)
+    return normalize_module_permissions(getattr(user, 'module_permissions', None) or {})
 
 
 def has_module_permission(user, module_key: str, permission: str) -> bool:
