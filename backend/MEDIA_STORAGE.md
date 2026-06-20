@@ -1,39 +1,54 @@
-# Media uploads on Vercel
+# Media uploads on Vercel (Cloudinary)
 
-Vercel serverless functions use a **read-only filesystem**. Django cannot save uploaded files to `/var/task/media/`.
+Vercel serverless functions use a **read-only filesystem**. User uploads (school logos, receipt signatures, expense receipts) are stored in **Cloudinary**.
 
-Configure **S3-compatible object storage** (recommended: [Cloudflare R2](https://developers.cloudflare.com/r2/) — free tier, no egress fees).
+Django admin / API static assets continue to use **WhiteNoise** at build time.
 
-## Environment variables (Vercel project → Settings → Environment Variables)
+## Environment variables
 
-| Variable | Example | Required |
-|----------|---------|----------|
-| `AWS_STORAGE_BUCKET_NAME` | `feesms-media` | Yes |
-| `AWS_ACCESS_KEY_ID` | R2 access key ID | Yes |
-| `AWS_SECRET_ACCESS_KEY` | R2 secret | Yes |
-| `AWS_S3_ENDPOINT_URL` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` | Yes for R2 |
-| `AWS_S3_REGION_NAME` | `auto` | R2 |
-| `AWS_S3_CUSTOM_DOMAIN` | `pub-xxxx.r2.dev` or your CDN domain | Yes for public image URLs |
+Set **one** of these on Vercel (Settings → Environment Variables) and in local `backend/.env`:
 
-Local development **without** these variables keeps using `backend/media/` on disk (unchanged).
+### Option A — single URL (recommended)
 
-## Cloudflare R2 quick setup
+```
+CLOUDINARY_URL=cloudinary://<API_KEY>:<API_SECRET>@<CLOUD_NAME>
+```
 
-1. Cloudflare dashboard → **R2** → Create bucket (e.g. `feesms-media`).
-2. **Manage R2 API tokens** → Create token with Object Read & Write on that bucket.
-3. Enable **public access** for the bucket (R2.dev subdomain or custom domain).
-4. Add the env vars above to Vercel (Production + Preview).
-5. Redeploy the backend.
+Example (replace with your values from the Cloudinary dashboard):
 
-## AWS S3
+```
+CLOUDINARY_URL=cloudinary://171419331137431:YOUR_API_SECRET@dwysuowan
+```
 
-Omit `AWS_S3_ENDPOINT_URL`. Set `AWS_S3_REGION_NAME` to your region (e.g. `ap-south-1`).  
-Make the bucket public for read, or use CloudFront + `AWS_S3_CUSTOM_DOMAIN`.
+### Option B — separate variables
 
-## What uses cloud storage
+| Variable | Value |
+|----------|--------|
+| `CLOUDINARY_CLOUD_NAME` | `dwysuowan` |
+| `CLOUDINARY_API_KEY` | Your API key |
+| `CLOUDINARY_API_SECRET` | Your API secret |
 
-- School logo (`/api/schools/{id}/`)
-- Expense receipts
-- Receipt signature images
+## Local development
 
-After configuration, existing DB paths still work; only **new uploads** go to the bucket.
+- **With** `CLOUDINARY_URL` in `backend/.env` → uploads go to Cloudinary (same as production).
+- **Without** Cloudinary env vars → uploads save to `backend/media/` on disk.
+
+## After setup
+
+1. Add `CLOUDINARY_URL` to Vercel (Production + Preview).
+2. Redeploy the backend.
+3. Upload a school logo in Settings — the image URL should be `https://res.cloudinary.com/dwysuowan/...`.
+
+## Upload folders (dynamic)
+
+Django `upload_to` paths map to Cloudinary folders:
+
+| Model field | Folder |
+|-------------|--------|
+| School logo | `school_logos/` |
+| Expense receipt | `expense_receipts/` |
+| Receipt signature | `receipt_signatures/` |
+
+## Security
+
+Never commit API secrets to git. Keep them only in `.env` (local) and Vercel environment variables.

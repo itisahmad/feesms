@@ -11,5 +11,5 @@ celery>=5.3
 gunicorn>=21.0
 whitenoise>=6.0
 django-environ>=0.11
-django-storages[s3]>=1.14
-boto3>=1.34
+cloudinary>=1.40
+django-cloudinary-storage>=0.3.0

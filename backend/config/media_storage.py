@@ -1,40 +1,53 @@
-"""Cloud media storage for serverless (Vercel) — local disk in development."""
+"""Cloud media storage — Cloudinary on serverless (Vercel), local disk in development."""
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
+from urllib.parse import unquote
+
+
+def _cloudinary_credentials() -> tuple[str, str, str] | None:
+    """Read Cloudinary credentials from CLOUDINARY_URL or separate env vars."""
+    url = os.getenv("CLOUDINARY_URL", "").strip()
+    if url:
+        match = re.match(r"cloudinary://([^:]+):([^@]+)@(.+)", url)
+        if match:
+            api_key, api_secret, cloud_name = match.groups()
+            return unquote(api_key), unquote(api_secret), unquote(cloud_name)
+
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+    api_key = os.getenv("CLOUDINARY_API_KEY", "").strip()
+    api_secret = os.getenv("CLOUDINARY_API_SECRET", "").strip()
+    if cloud_name and api_key and api_secret:
+        return api_key, api_secret, cloud_name
+    return None
 
 
 def apply_media_storage_settings(globals_dict: dict[str, Any]) -> bool:
     """
-    When AWS_STORAGE_BUCKET_NAME is set, store uploads in S3-compatible object storage
-    (AWS S3, Cloudflare R2, etc.). Otherwise keep Django's default local filesystem.
+    When Cloudinary credentials are set, store uploads in Cloudinary.
+    Otherwise keep Django's default local filesystem (local dev).
     """
-    bucket = os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip()
-    if not bucket:
+    creds = _cloudinary_credentials()
+    if not creds:
         globals_dict["USE_CLOUD_MEDIA"] = False
         return False
 
+    api_key, api_secret, cloud_name = creds
+
     installed = list(globals_dict.get("INSTALLED_APPS", []))
-    if "storages" not in installed:
-        globals_dict["INSTALLED_APPS"] = installed + ["storages"]
+    for app in ("cloudinary_storage", "cloudinary"):
+        if app not in installed:
+            installed.append(app)
+    globals_dict["INSTALLED_APPS"] = installed
 
-    endpoint = os.getenv("AWS_S3_ENDPOINT_URL", "").strip() or None
-    custom_domain = os.getenv("AWS_S3_CUSTOM_DOMAIN", "").strip() or None
-
-    options: dict[str, Any] = {
-        "access_key": os.getenv("AWS_ACCESS_KEY_ID", ""),
-        "secret_key": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
-        "bucket_name": bucket,
-        "region_name": os.getenv("AWS_S3_REGION_NAME", "auto"),
-        "default_acl": None,
-        "querystring_auth": False,
-        "file_overwrite": False,
+    globals_dict["CLOUDINARY_STORAGE"] = {
+        "CLOUD_NAME": cloud_name,
+        "API_KEY": api_key,
+        "API_SECRET": api_secret,
+        "SECURE": True,
     }
-    if endpoint:
-        options["endpoint_url"] = endpoint
-    if custom_domain:
-        options["custom_domain"] = custom_domain
 
     static_backend = (
         globals_dict.get("STORAGES", {})
@@ -44,16 +57,13 @@ def apply_media_storage_settings(globals_dict: dict[str, Any]) -> bool:
 
     globals_dict["STORAGES"] = {
         "default": {
-            "BACKEND": "storages.backends.s3.S3Storage",
-            "OPTIONS": options,
+            "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
         },
         "staticfiles": {
             "BACKEND": static_backend,
         },
     }
 
-    if custom_domain:
-        globals_dict["MEDIA_URL"] = f"https://{custom_domain}/"
-
+    globals_dict["MEDIA_URL"] = f"https://res.cloudinary.com/{cloud_name}/"
     globals_dict["USE_CLOUD_MEDIA"] = True
     return True

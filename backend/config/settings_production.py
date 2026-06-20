@@ -31,11 +31,11 @@ else:
 
 import logging
 
-if not os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip():
+if not os.getenv("CLOUDINARY_URL", "").strip() and not os.getenv("CLOUDINARY_CLOUD_NAME", "").strip():
     logging.getLogger(__name__).warning(
-        "AWS_STORAGE_BUCKET_NAME is not set. File uploads (school logo, receipts, etc.) "
+        "Cloudinary is not configured (set CLOUDINARY_URL). File uploads (school logo, receipts, etc.) "
         "will fail on Vercel because the filesystem is read-only. "
-        "Configure S3-compatible storage — see backend/MEDIA_STORAGE.md."
+        "See backend/MEDIA_STORAGE.md."
     )
 
 STATIC_URL = "/static/"
