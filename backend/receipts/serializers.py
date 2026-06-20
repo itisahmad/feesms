@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from config.media_files import absolute_media_url
+from config.serializer_mixins import CloudFileUpdateMixin, OptionalImageField
 from .models import SchoolReceiptSettings
 from .templates_registry import TEMPLATE_CATALOG, TEMPLATE_KEYS
 
@@ -13,9 +14,13 @@ class ReceiptTemplateSerializer(serializers.Serializer):
     supports_thermal = serializers.BooleanField()
 
 
-class SchoolReceiptSettingsSerializer(serializers.ModelSerializer):
+class SchoolReceiptSettingsSerializer(CloudFileUpdateMixin, serializers.ModelSerializer):
+    signature_image = OptionalImageField(required=False, allow_null=True)
     signature_image_url = serializers.SerializerMethodField()
     clear_signature_image = serializers.BooleanField(write_only=True, required=False, default=False)
+
+    file_field_names = ('signature_image',)
+    clear_field_map = {'clear_signature_image': 'signature_image'}
 
     class Meta:
         model = SchoolReceiptSettings
@@ -53,10 +58,8 @@ class SchoolReceiptSettingsSerializer(serializers.ModelSerializer):
         return v
 
     def update(self, instance, validated_data):
-        clear = validated_data.pop('clear_signature_image', False)
-        if clear and instance.signature_image:
-            instance.signature_image.delete(save=False)
-            instance.signature_image = None
+        if self.partial:
+            return self._apply_cloud_file_update(instance, validated_data)
         return super().update(instance, validated_data)
 
 

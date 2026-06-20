@@ -67,3 +67,16 @@ def apply_media_storage_settings(globals_dict: dict[str, Any]) -> bool:
     globals_dict["MEDIA_URL"] = f"https://res.cloudinary.com/{cloud_name}/"
     globals_dict["USE_CLOUD_MEDIA"] = True
     return True
+
+
+def require_cloud_media(globals_dict: dict[str, Any]) -> None:
+    """Raise on serverless production if uploads would hit the read-only filesystem."""
+    if globals_dict.get("USE_CLOUD_MEDIA"):
+        return
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "CLOUDINARY_URL (or CLOUDINARY_CLOUD_NAME + API key/secret) must be set in production. "
+        "Vercel's filesystem is read-only; uploads cannot use MEDIA_ROOT. "
+        "See backend/MEDIA_STORAGE.md."
+    )

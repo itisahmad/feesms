@@ -7,6 +7,7 @@ from django.db.models import Q
 from datetime import date
 from django.utils import timezone
 from config.media_files import absolute_media_url
+from config.serializer_mixins import CloudFileUpdateMixin, OptionalImageField
 from .models import (
     User,
     School,
@@ -289,8 +290,13 @@ class ResetPasswordSerializer(serializers.Serializer):
         return attrs
 
 
-class SchoolSerializer(serializers.ModelSerializer):
+class SchoolSerializer(CloudFileUpdateMixin, serializers.ModelSerializer):
+    logo = OptionalImageField(required=False, allow_null=True)
     logo_url = serializers.SerializerMethodField()
+    clear_logo = serializers.BooleanField(write_only=True, required=False, default=False)
+
+    file_field_names = ('logo',)
+    clear_field_map = {'clear_logo': 'logo'}
 
     class Meta:
         model = School
@@ -305,6 +311,7 @@ class SchoolSerializer(serializers.ModelSerializer):
             'email',
             'logo',
             'logo_url',
+            'clear_logo',
             'plan',
             'max_students',
             'max_staff_logins',
@@ -334,6 +341,11 @@ class SchoolSerializer(serializers.ModelSerializer):
 
     def get_logo_url(self, obj):
         return absolute_media_url(obj.logo, self.context.get('request'))
+
+    def update(self, instance, validated_data):
+        if self.partial:
+            return self._apply_cloud_file_update(instance, validated_data)
+        return super().update(instance, validated_data)
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -822,12 +834,15 @@ class VendorSerializer(serializers.ModelSerializer):
         return obj.expenses.count()
 
 
-class ExpenseSerializer(serializers.ModelSerializer):
+class ExpenseSerializer(CloudFileUpdateMixin, serializers.ModelSerializer):
+    receipt = OptionalImageField(required=False, allow_null=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     vendor_name = serializers.CharField(source='vendor.name', read_only=True)
     payment_mode_display = serializers.CharField(source='get_payment_mode_display', read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     receipt_url = serializers.SerializerMethodField()
+
+    file_field_names = ('receipt',)
 
     class Meta:
         model = Expense
@@ -839,6 +854,11 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def get_receipt_url(self, obj):
         return absolute_media_url(obj.receipt, self.context.get('request'))
+
+    def update(self, instance, validated_data):
+        if self.partial:
+            return self._apply_cloud_file_update(instance, validated_data)
+        return super().update(instance, validated_data)
 
 
 class BudgetSerializer(serializers.ModelSerializer):

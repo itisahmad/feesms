@@ -1,54 +1,61 @@
 # Media uploads on Vercel (Cloudinary)
 
-Vercel serverless functions use a **read-only filesystem**. User uploads (school logos, receipt signatures, expense receipts) are stored in **Cloudinary**.
+## Root cause
 
-Django admin / API static assets continue to use **WhiteNoise** at build time.
-
-## Environment variables
-
-Set **one** of these on Vercel (Settings → Environment Variables) and in local `backend/.env`:
-
-### Option A — single URL (recommended)
+Vercel serverless functions use a **read-only filesystem**. Django's default `FileSystemStorage` writes to `MEDIA_ROOT` (`/var/task/media` on Vercel), which raises:
 
 ```
-CLOUDINARY_URL=cloudinary://<API_KEY>:<API_SECRET>@<CLOUD_NAME>
+OSError: [Errno 30] Read-only file system: '/var/task/media'
 ```
 
-Example (replace with your values from the Cloudinary dashboard):
+This happens on `PATCH /api/schools/<id>/` when an `ImageField` (school logo) is saved.
+
+## Fix
+
+1. **Production** uses **Cloudinary** via `django-cloudinary-storage` (`STORAGES['default']`).
+2. **Local dev** without `CLOUDINARY_URL` keeps using `backend/media/`.
+3. **Partial PATCH** only saves fields that changed (`update_fields`) so existing logos are not re-written when updating name/city/etc.
+
+## Required Vercel environment variable
 
 ```
-CLOUDINARY_URL=cloudinary://171419331137431:YOUR_API_SECRET@dwysuowan
+CLOUDINARY_URL=cloudinary://<API_KEY>:<API_SECRET>@dwysuowan
 ```
 
-### Option B — separate variables
+Or separate vars: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
 
-| Variable | Value |
-|----------|--------|
-| `CLOUDINARY_CLOUD_NAME` | `dwysuowan` |
-| `CLOUDINARY_API_KEY` | Your API key |
-| `CLOUDINARY_API_SECRET` | Your API secret |
+Production **fails at startup** if Cloudinary is not configured (`ImproperlyConfigured`).
 
-## Local development
+## Upload folders
 
-- **With** `CLOUDINARY_URL` in `backend/.env` → uploads go to Cloudinary (same as production).
-- **Without** Cloudinary env vars → uploads save to `backend/media/` on disk.
-
-## After setup
-
-1. Add `CLOUDINARY_URL` to Vercel (Production + Preview).
-2. Redeploy the backend.
-3. Upload a school logo in Settings — the image URL should be `https://res.cloudinary.com/dwysuowan/...`.
-
-## Upload folders (dynamic)
-
-Django `upload_to` paths map to Cloudinary folders:
-
-| Model field | Folder |
-|-------------|--------|
+| Field | Cloudinary folder |
+|-------|-------------------|
 | School logo | `school_logos/` |
 | Expense receipt | `expense_receipts/` |
 | Receipt signature | `receipt_signatures/` |
 
-## Security
+## Testing
 
-Never commit API secrets to git. Keep them only in `.env` (local) and Vercel environment variables.
+### Local (with Cloudinary in `.env`)
+
+```bash
+cd backend && source venv/bin/activate
+python manage.py check
+python manage.py test schools.tests.test_school_upload
+```
+
+### Verify storage backend
+
+```bash
+python -c "import django; import os; os.environ['DJANGO_SETTINGS_MODULE']='config.settings'; django.setup(); from django.conf import settings; print(settings.STORAGES['default'])"
+```
+
+### Manual API checks
+
+1. **PATCH without image** — update name only → `200`, logo unchanged.
+2. **PATCH with image** — multipart `logo` file → `200`, `logo_url` is `https://res.cloudinary.com/dwysuowan/...`.
+3. **PATCH academic fields** — JSON `academic_year_start_month` → `200`, no file write.
+
+## Migration impact
+
+**None.** Storage backend is a deployment setting; database columns are unchanged. Existing local paths in DB continue to work for reads until re-uploaded to Cloudinary.

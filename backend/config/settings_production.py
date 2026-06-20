@@ -29,19 +29,26 @@ else:
 
 # DATABASE_URL from base settings.py — do not override with DB_* here.
 
+from config.media_storage import apply_media_storage_settings, require_cloud_media
+
+# Env vars on Vercel are available at runtime; ensure Cloudinary is active.
+apply_media_storage_settings(globals())
+require_cloud_media(globals())
+
 import logging
 
-if not os.getenv("CLOUDINARY_URL", "").strip() and not os.getenv("CLOUDINARY_CLOUD_NAME", "").strip():
+if not USE_CLOUD_MEDIA:
     logging.getLogger(__name__).warning(
-        "Cloudinary is not configured (set CLOUDINARY_URL). File uploads (school logo, receipts, etc.) "
-        "will fail on Vercel because the filesystem is read-only. "
-        "See backend/MEDIA_STORAGE.md."
+        "Cloudinary is not configured (set CLOUDINARY_URL). File uploads will fail on Vercel."
     )
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
-MEDIA_URL = "/media/"
-MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+
+# Only use local MEDIA_ROOT when cloud storage is disabled (should not happen in production).
+if not USE_CLOUD_MEDIA:
+    MEDIA_URL = "/media/"
+    MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 # Serverless: avoid Redis (not available on Vercel functions by default).
 CACHES = {
