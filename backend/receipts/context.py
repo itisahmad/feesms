@@ -9,6 +9,8 @@ from django.utils import timezone
 
 from schools.models import FeePayment, Student, StudentFee
 
+from config.media_files import local_file_path
+
 from .models import SchoolReceiptSettings
 from .periods import academic_year_label, academic_year_start_year, months_in_academic_year
 from .templates_registry import DEFAULT_TEMPLATE_KEY
@@ -47,10 +49,10 @@ def resolve_branding(school, settings: SchoolReceiptSettings | None = None) -> d
         'header_color': settings.header_color or '#0d9488',
         'footer_text': settings.footer_text or 'This is a computer-generated receipt.',
         'signature_label': settings.signature_label or 'Authorized Signatory',
-        'signature_image_path': settings.signature_image.path if settings.signature_image else None,
+        'signature_image_path': local_file_path(settings.signature_image),
         'stamp_text': settings.stamp_text or '',
         'show_logo': settings.show_logo,
-        'logo_path': school.logo.path if settings.show_logo and school.logo else None,
+        'logo_path': local_file_path(school.logo) if settings.show_logo and school.logo else None,
         'template_key': settings.template_key,
         'print_format': settings.print_format,
     }

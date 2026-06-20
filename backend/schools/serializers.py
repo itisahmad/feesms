@@ -6,6 +6,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.db.models import Q
 from datetime import date
 from django.utils import timezone
+from config.media_files import absolute_media_url
 from .models import (
     User,
     School,
@@ -332,12 +333,7 @@ class SchoolSerializer(serializers.ModelSerializer):
         return super().to_representation(instance)
 
     def get_logo_url(self, obj):
-        if not obj.logo:
-            return None
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(obj.logo.url)
-        return obj.logo.url
+        return absolute_media_url(obj.logo, self.context.get('request'))
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -842,11 +838,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
                  'created_by', 'created_by_name', 'created_at', 'updated_at']
 
     def get_receipt_url(self, obj):
-        if obj.receipt:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.receipt.url)
-        return None
+        return absolute_media_url(obj.receipt, self.context.get('request'))
 
 
 class BudgetSerializer(serializers.ModelSerializer):

@@ -143,4 +143,8 @@ WHITENOISE_USE_FINDERS = DEBUG
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+from config.media_storage import apply_media_storage_settings  # noqa: E402
+
+apply_media_storage_settings(globals())
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

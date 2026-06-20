@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from config.media_files import absolute_media_url
 from .models import SchoolReceiptSettings
 from .templates_registry import TEMPLATE_CATALOG, TEMPLATE_KEYS
 
@@ -38,12 +39,7 @@ class SchoolReceiptSettingsSerializer(serializers.ModelSerializer):
         read_only_fields = ['updated_at', 'signature_image_url']
 
     def get_signature_image_url(self, obj):
-        if not obj.signature_image:
-            return None
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(obj.signature_image.url)
-        return obj.signature_image.url
+        return absolute_media_url(obj.signature_image, self.context.get('request'))
 
     def validate_template_key(self, value):
         if value not in TEMPLATE_KEYS:

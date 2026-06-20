@@ -29,6 +29,15 @@ else:
 
 # DATABASE_URL from base settings.py — do not override with DB_* here.
 
+import logging
+
+if not os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip():
+    logging.getLogger(__name__).warning(
+        "AWS_STORAGE_BUCKET_NAME is not set. File uploads (school logo, receipts, etc.) "
+        "will fail on Vercel because the filesystem is read-only. "
+        "Configure S3-compatible storage — see backend/MEDIA_STORAGE.md."
+    )
+
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 MEDIA_URL = "/media/"
