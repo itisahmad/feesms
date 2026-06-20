@@ -81,7 +81,7 @@ export default function StaffPage() {
 
   const loadRoles = async () => {
     const { data } = await getStaffRoles();
-    setRoles(data.results || data);
+    setRoles(Array.isArray(data) ? data : data.results);
   };
 
   useEffect(() => {

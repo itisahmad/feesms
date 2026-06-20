@@ -192,7 +192,8 @@ export type StaffRole = {
   is_system: boolean;
 };
 
-export const getStaffRoles = () => api.get<StaffRole[]>('/staff-roles/');
+export const getStaffRoles = () =>
+  api.get<{ results: StaffRole[] } | StaffRole[]>('/staff-roles/');
 export const createStaffRole = (data: {
   name: string;
   description?: string;

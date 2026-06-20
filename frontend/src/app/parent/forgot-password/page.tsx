@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { ParentAuthShell } from '@/components/parent/parent-auth-shell';
 import { parentForgotPasswordSendOTP } from '@/lib/api';
 
 const labelClass = 'block text-sm font-medium text-gray-700 mb-1.5';
@@ -76,18 +77,12 @@ export default function ParentForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 via-amber-50/30 to-teal-50 p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-teal-800">Parent Portal</h1>
-          <p className="mt-1 text-gray-600">Reset your password</p>
-        </div>
-        <div className="auth-surface rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
-          <h2 className="mb-6 text-xl font-semibold text-gray-900">
-            {step === 'details' ? 'Verify your phone' : 'Set new password'}
-          </h2>
+    <ParentAuthShell subtitle="Reset your password">
+      <h2 className="mb-6 text-xl font-semibold text-gray-900">
+        {step === 'details' ? 'Verify your phone' : 'Set new password'}
+      </h2>
 
-          {step === 'details' ? (
+      {step === 'details' ? (
             <form onSubmit={handleSendOTP} className="space-y-5">
               {error && (
                 <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>
@@ -197,20 +192,18 @@ export default function ParentForgotPasswordPage() {
             </form>
           )}
 
-          <p className="mt-6 text-center text-sm text-gray-600">
-            Remember your password?{' '}
-            <Link href="/parent/login" className="font-medium text-teal-600 hover:underline">
-              Sign in
-            </Link>
-          </p>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            No account yet?{' '}
-            <Link href="/parent/register" className="font-medium text-teal-600 hover:underline">
-              Register with OTP
-            </Link>
-          </p>
-        </div>
-      </div>
-    </div>
+      <p className="mt-6 text-center text-sm text-gray-600">
+        Remember your password?{' '}
+        <Link href="/parent/login" className="font-medium text-teal-600 hover:underline">
+          Sign in
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-sm text-gray-600">
+        No account yet?{' '}
+        <Link href="/parent/register" className="font-medium text-teal-600 hover:underline">
+          Register with OTP
+        </Link>
+      </p>
+    </ParentAuthShell>
   );
 }

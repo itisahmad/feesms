@@ -175,7 +175,7 @@ export function StudentPaymentsSection({
                       <h3 className="font-medium text-slate-200">
                         {MONTHS[m.month]} {m.year}
                       </h3>
-                      {m.is_current ? (
+                      {m.is_current && monthPending > 0 ? (
                         <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-xs text-teal-300">
                           Current
                         </span>
